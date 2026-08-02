@@ -33,7 +33,7 @@ script_max_seconds: 82
 
 cta: "Follow for the next part 👀"
 hashtags: "#thrillerbooks #suspensenovel #bookstagram #rahaysaexe #booktok"
-review_required: true
+review_required: false
 
 # Posting provider: "meta" (Instagram Graph API) or "metricool"
 post_provider: meta

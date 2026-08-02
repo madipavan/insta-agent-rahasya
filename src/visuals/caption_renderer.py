@@ -10,6 +10,7 @@ from src.visuals.captions import CaptionSegment
 
 def _hindi_font_name() -> str:
   candidates = [
+    ("assets/fonts/NotoSansDevanagari-Regular.ttf", "Noto Sans Devanagari"),
     ("C:/Windows/Fonts/mangal.ttf", "Mangal"),
     ("C:/Windows/Fonts/Nirmala.ttf", "Nirmala UI"),
     ("C:/Windows/Fonts/NotoSansDevanagari-Regular.ttf", "Noto Sans Devanagari"),
@@ -17,7 +18,7 @@ def _hindi_font_name() -> str:
   for path, name in candidates:
     if Path(path).exists():
       return name
-  return "Arial"
+  return "Noto Sans Devanagari"
 
 
 def _format_ass_time(seconds: float) -> str:
@@ -77,8 +78,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 def ass_filter_path(ass_path: Path) -> str:
-  """Escape ASS path for ffmpeg subtitles filter on Windows."""
-  fonts_dir = Path("C:/Windows/Fonts")
+  """Escape ASS path for ffmpeg subtitles filter."""
+  fonts_dir = Path("assets/fonts")
+  if not fonts_dir.exists():
+    fonts_dir = Path("C:/Windows/Fonts")
   if not fonts_dir.exists():
     fonts_dir = ass_path.parent
 

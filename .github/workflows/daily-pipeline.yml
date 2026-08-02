@@ -1,0 +1,81 @@
+name: Daily Pipeline
+
+on:
+  schedule:
+    # 5:00 PM IST = 11:30 UTC — generates content, schedules Meta post for next day 7:30 PM
+    - cron: "30 11 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-pipeline
+  cancel-in-progress: false
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
+      META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
+      META_APP_ID: ${{ secrets.META_APP_ID }}
+      META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      METRICOOL_API_KEY: ${{ secrets.METRICOOL_API_KEY }}
+      METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore pipeline state
+        uses: actions/cache/restore@v4
+        id: state_cache
+        with:
+          path: |
+            data
+            output/stock_cache
+          key: rahasya-state-${{ github.ref }}
+          restore-keys: |
+            rahasya-state-${{ github.ref }}-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: bash scripts/gha_setup.sh
+
+      - name: Run pipeline
+        run: python main.py run
+
+      - name: Save pipeline state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            output/stock_cache
+          key: rahasya-state-${{ github.ref }}-${{ github.run_id }}
+
+      - name: Upload latest output
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-episode-${{ github.run_number }}
+          path: |
+            output/posted/**/*
+            output/ready_to_upload/**/*
+            logs/*.log
+          retention-days: 14
+          if-no-files-found: ignore

@@ -1,0 +1,206 @@
+"""Main pipeline orchestrator."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from src.book_queue.queue import BookQueue
+from src.book_queue.store import Database
+from src.config import AppConfig
+from src.pipeline.logger import PipelineLogger
+from src.novel_assets import NovelAssetManager
+from src.review.bundle import ReviewBundleWriter
+from src.script_gen.export import write_script_txt, write_transcript_txt
+from src.script_gen.post_details import build_post_details, write_post_details_json, write_post_details_txt
+from src.review.telegram import TelegramNotifier
+from src.scheduler.factory import get_scheduler
+from src.hashtags.fetcher import HashtagFetcher
+from src.script_gen.generator import ScriptGenerator
+from src.static_post.generator import StaticPostGenerator
+from src.voiceover.provider import get_voiceover_provider
+from src.visuals.assembler import ReelAssembler
+from src.visuals.stock import StockResolver
+
+
+class Pipeline:
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+        self.logger = PipelineLogger(config.path("logs_dir"))
+        self.db = Database(config.path("db_path"))
+        self.queue = BookQueue(config, self.logger)
+        self.script_gen = ScriptGenerator(config, self.logger, self.db)
+        self.voiceover = get_voiceover_provider(config, self.logger)
+        self.stock = StockResolver(config, self.logger)
+        self.reel = ReelAssembler(config, self.logger)
+        self.static_post = StaticPostGenerator(config, self.logger)
+        self.novel_assets = NovelAssetManager(config, self.logger, self.db, stock=self.stock)
+        self.review = ReviewBundleWriter(config, self.db)
+        self.telegram = TelegramNotifier(config, self.logger)
+        self.scheduler = get_scheduler(config, self.logger)
+        self.hashtags = HashtagFetcher(config, self.logger)
+
+    def run(self) -> str:
+        self.logger.start("pipeline", "daily run")
+        try:
+            context = self.queue.get_today_context()
+            script = self.script_gen.generate(context)
+            caption = self.script_gen.format_caption(context, script)
+
+            work_dir = self.config.path("output_dir") / "work" / self.review.create_bundle_id(context)
+            work_dir.mkdir(parents=True, exist_ok=True)
+
+            spoken_text = script.episode_script()
+            voiceover_path = self.voiceover.generate(
+                spoken_text,
+                work_dir / "voiceover.mp3",
+            )
+
+            transcript_path = write_transcript_txt(
+                spoken_text,
+                work_dir / "transcript.txt",
+            )
+
+            assets = self.novel_assets.ensure(context.novel, script.stock_keywords)
+            thumbnail_path = self.novel_assets.episode_thumbnail(
+                context.novel,
+                context.episode.episode_num,
+                context.total_episodes,
+                work_dir / "thumbnail.png",
+                assets=assets,
+            )
+
+            stock_paths = self.stock.resolve_visuals(script.stock_keywords, work_dir)
+            reel_path = self.reel.assemble(
+                context,
+                script,
+                voiceover_path,
+                stock_paths,
+                work_dir / "reel.mp4",
+                bgm_path=assets.bgm_path,
+            )
+            static_paths = self.static_post.generate_all(
+                context, script, work_dir, stock_paths
+            )
+
+            script_txt_path = write_script_txt(
+                context, script, work_dir / "script.txt", caption=caption
+            )
+
+            ranked_hashtags = self.hashtags.build(
+                context, extra_keywords=script.stock_keywords
+            )
+            post_details = build_post_details(
+                context,
+                script,
+                self.config,
+                caption,
+                static_slide_count=len(static_paths),
+                hashtags=ranked_hashtags,
+            )
+            post_details_txt_path = write_post_details_txt(
+                post_details, work_dir / "post_details.txt"
+            )
+            post_details_json_path = write_post_details_json(
+                post_details, work_dir / "post_details.json"
+            )
+
+            bundle_id, bundle_dir = self.review.write(
+                context,
+                script,
+                caption,
+                voiceover_path,
+                reel_path,
+                static_paths,
+                thumbnail_path=thumbnail_path,
+                script_txt_path=script_txt_path,
+                transcript_path=transcript_path,
+                post_details_txt_path=post_details_txt_path,
+                post_details_json_path=post_details_json_path,
+            )
+
+            self.queue.mark_episode_generated(context)
+            self.db.log_post(
+                context.novel.id,
+                context.episode.episode_num,
+                bundle_id,
+                "generated",
+            )
+
+            if self.config.review_required:
+                self.telegram.send_review_notification(
+                    bundle_id,
+                    caption,
+                    script.episode_script(),
+                    bundle_dir,
+                )
+                self.logger.ok("pipeline", f"awaiting review: {bundle_id}")
+            else:
+                self.approve_and_post(bundle_id)
+
+            return bundle_id
+        except Exception as exc:
+            self.logger.fail("pipeline", str(exc))
+            self.telegram.send_error(str(exc))
+            raise
+
+    def approve_and_post(self, bundle_id: str) -> None:
+        self.logger.start("approve", bundle_id)
+        approved_dir = self.review.approve(bundle_id)
+        caption_path = approved_dir / "caption.txt"
+        caption = caption_path.read_text(encoding="utf-8") if caption_path.exists() else ""
+
+        post_details = None
+        post_details_path = approved_dir / "post_details.json"
+        if post_details_path.exists():
+            import json
+            from src.script_gen.post_details import PostDetails
+            data = json.loads(post_details_path.read_text(encoding="utf-8"))
+            post_details = PostDetails(**data)
+
+        thumbnail_path = approved_dir / "thumbnail.png"
+        if not thumbnail_path.exists():
+            thumbnail_path = None
+
+        post_id = self.scheduler.queue_posts(
+            approved_dir / "reel.mp4",
+            sorted(approved_dir.glob("static_post_*.png")) or [approved_dir / "static_post.png"],
+            caption,
+            bundle_id,
+            thumbnail_path=thumbnail_path,
+            post_details=post_details,
+        )
+
+        bundle = self.db.get_review_bundle(bundle_id)
+        if bundle:
+            self.db.log_post(
+                bundle["novel_id"],
+                bundle["episode_num"],
+                bundle_id,
+                "posted",
+                metricool_id=post_id,
+            )
+            self.db.set_review_status(bundle_id, "posted")
+
+        posted_dir = self.config.path("output_dir") / "posted" / bundle_id
+        posted_dir.parent.mkdir(parents=True, exist_ok=True)
+        import shutil
+        if posted_dir.exists():
+            shutil.rmtree(posted_dir)
+        shutil.copytree(approved_dir, posted_dir)
+
+        provider = self.config.post_provider or "meta"
+        self.telegram.send_info(f"✅ Posted/queued: `{bundle_id}`\n{provider}: {post_id}")
+        self.logger.ok("approve", post_id)
+
+    def reject_bundle(self, bundle_id: str, reason: str = "") -> None:
+        self.review.reject(bundle_id, reason)
+        bundle = self.db.get_review_bundle(bundle_id)
+        if bundle:
+            self.db.log_post(
+                bundle["novel_id"],
+                bundle["episode_num"],
+                bundle_id,
+                "rejected",
+                error=reason,
+            )
+        self.telegram.send_info(f"❌ Rejected: `{bundle_id}` — {reason}")

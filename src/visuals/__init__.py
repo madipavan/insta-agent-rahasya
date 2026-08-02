@@ -1,0 +1,1 @@
+"""Visual assembly module."""

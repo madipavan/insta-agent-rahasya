@@ -1,0 +1,78 @@
+brand:
+  bg_color: "#0A0E1A"
+  accent_color: "#C41E3A"
+  text_color: "#F5F5F5"
+  display_font: "assets/fonts/BebasNeue-Regular.ttf"
+  body_font: "assets/fonts/Inter-Regular.ttf"
+  quote_font: "C:/Windows/Fonts/georgiab.ttf"
+  watermark_text: "Rahasya.exe"
+  logo_path: "assets/brand/logo.png"
+  intro_duration_sec: 1.0
+  outro_duration_sec: 1.0
+
+llm_provider: groq
+llm_model_groq: llama-3.3-70b-versatile
+llm_model_anthropic: claude-sonnet-4-20250514
+llm_model_openai: gpt-4o
+
+post_time: "19:30"
+timezone: "Asia/Kolkata"
+
+# Free Hindi female voice (Microsoft edge-tts — no API key needed)
+voice_provider: edge-tts
+voice_name: Swara
+edge_tts_voice: "hi-IN-SwaraNeural"
+voice_language: hindi
+# ElevenLabs (optional — Tarini needs paid plan; premade female e.g. Jessica: cgSgspJ2msm6clMCkdW9)
+voice_id: ""
+elevenlabs_fallback: false
+
+# Target under 90s total reel (intro + voiceover + outro)
+script_min_seconds: 65
+script_max_seconds: 82
+
+cta: "Follow for the next part 👀"
+hashtags: "#thrillerbooks #suspensenovel #bookstagram #rahaysaexe #booktok"
+review_required: true
+
+# Posting provider: "meta" (Instagram Graph API) or "metricool"
+post_provider: meta
+
+discovery:
+  min_queue_size: 3
+  batch_size: 5
+
+caption_template: |
+  {caption_hook}
+
+  {caption_teaser}
+
+  Part {episode}/{total} of "{novel_title}"
+  {cta}
+
+  {hashtags}
+
+static_post:
+  width: 1080
+  height: 1350
+  layout_rotation: quote
+  chars_per_slide: 100
+  max_slides: 10
+
+video:
+  width: 1080
+  height: 1920
+  fps: 30
+  clip_count: 4
+  photo_count: 1
+  artistic_stock: true
+  bgm_volume: 0.22
+
+paths:
+  data_dir: data
+  db_path: data/rahasya.db
+  output_dir: output
+  logs_dir: logs
+  stock_library: assets/stock_library
+  sample_scripts: data/sample_scripts
+  novels_seed: data/novels_seed.json

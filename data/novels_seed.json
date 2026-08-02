@@ -1,0 +1,31 @@
+{
+  "novels": [
+    {
+      "title": "The Thirty-Nine Steps",
+      "author": "John Buchan",
+      "country": "UK",
+      "chapter_count": 24,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/6133",
+      "adaptation_checked": true
+    },
+    {
+      "title": "The Mystery of the Yellow Room",
+      "author": "Gaston Leroux",
+      "country": "France",
+      "chapter_count": 22,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/3063",
+      "adaptation_checked": true
+    },
+    {
+      "title": "The Lodger",
+      "author": "Marie Belloc Lowndes",
+      "country": "UK",
+      "chapter_count": 18,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/1686",
+      "adaptation_checked": true
+    }
+  ]
+}

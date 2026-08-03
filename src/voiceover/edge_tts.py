@@ -1,4 +1,4 @@
-"""Free Microsoft Edge TTS voiceover generation."""
+"""Free Microsoft Edge TTS voiceover generation with expressive dubbing prosody."""
 
 from __future__ import annotations
 
@@ -28,16 +28,19 @@ class EdgeTTSVoiceover(VoiceoverBase):
             self.voice = self.HINDI_FEMALE
         else:
             self.voice = self.ENGLISH_VOICE
+        self.rate = getattr(config, "edge_tts_rate", "-8%") or "-8%"
+        self.pitch = getattr(config, "edge_tts_pitch", "-2Hz") or "-2Hz"
 
     def generate(self, text: str, output_path: Path) -> Path:
-        self.logger.start("voiceover", f"edge-tts ({self.voice}) -> {output_path}")
+        self.logger.start("voiceover", f"edge-tts ({self.voice}, rate={self.rate}) -> {output_path}")
         try:
             import edge_tts
         except ImportError as exc:
             raise ImportError("edge-tts not installed. Run: pip install edge-tts") from exc
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        chunks = self._split_text(text)
+        performance_text = self._prepare_performance_text(text)
+        chunks = self._split_text(performance_text)
 
         if len(chunks) == 1:
             asyncio.run(self._save(edge_tts, chunks[0], output_path))
@@ -57,14 +60,31 @@ class EdgeTTSVoiceover(VoiceoverBase):
         self.logger.ok("voiceover", f"edge-tts {duration:.1f}s")
         return output_path
 
+    def _prepare_performance_text(self, text: str) -> str:
+        """Add natural pauses for dubbing-style delivery."""
+        t = text.strip()
+        # Ellipsis → longer dramatic pause
+        t = re.sub(r"…+", " … ", t)
+        t = re.sub(r"\.{3,}", " … ", t)
+        # Sentence ends → micro-pause
+        t = re.sub(r"(?<=[।!?])\s*", " ", t)
+        # Em-dash / hyphen dramatic beats
+        t = re.sub(r"\s*—\s*", " — ", t)
+        return t.strip()
+
     async def _save(self, edge_tts_module, text: str, output_path: Path) -> None:
-        communicate = edge_tts_module.Communicate(text, self.voice)
+        communicate = edge_tts_module.Communicate(
+            text,
+            self.voice,
+            rate=self.rate,
+            pitch=self.pitch,
+        )
         await communicate.save(str(output_path))
 
     def _split_text(self, text: str) -> list[str]:
         if len(text) <= self.CHUNK_SIZE:
             return [text]
-        sentences = re.split(r"(?<=[।.!?])\s+", text.strip())
+        sentences = re.split(r"(?<=[।.!?…])\s+", text.strip())
         chunks: list[str] = []
         current = ""
         for sentence in sentences:

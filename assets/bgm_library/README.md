@@ -1,17 +1,21 @@
-# Per-novel BGM
+# Per-novel storytelling BGM
 
-BGM is **searched and downloaded per novel** based on the novel title + episode keywords.
+BGM must be **cinematic / instrumental storytelling** music — never pop songs
+(e.g. Faded, vocal covers, TikTok remixes).
 
-Example for *The Thirty-Nine Steps* with keywords `spy, chase, london`:
-```
-NCS epic cinematic spy chase london thirty steps
-```
+Search prefers titles with: `cinematic`, `soundtrack`, `underscore`,
+`instrumental`, `no vocals`, `mystery`, `suspense`, `royalty free`.
 
-The best matching NCS/epic track is downloaded once to:
+Hard-rejects: vocals, lyrics, covers, remixes, famous chart songs.
+
+Downloaded once to:
 `data/novels/{id}_{slug}/bgm.mp3`
 
 Same track is reused for every episode of that novel.
 
 Requires: `pip install yt-dlp`
 
-Optional: delete `data/novels/{id}_{slug}/bgm.mp3` to force a re-search.
+Optional: delete `data/novels/{id}_{slug}/bgm.mp3` (+ `.json`) to force a re-search.
+
+You can also drop safe instrumental `.mp3` files into this folder as a library fallback
+(filenames must not look like pop songs).

@@ -58,9 +58,9 @@ class ElevenLabsVoiceover(VoiceoverBase):
             "model_id": "eleven_multilingual_v2",
             "language_code": "hi",
             "voice_settings": {
-                "stability": 0.45,
-                "similarity_boost": 0.8,
-                "style": 0.35,
+                "stability": 0.35,
+                "similarity_boost": 0.75,
+                "style": 0.55,
             },
         }
 

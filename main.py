@@ -93,6 +93,20 @@ def cmd_add_novel(args: argparse.Namespace) -> None:
     print(f"Added novel id={novel_id}: {args.title} by {args.author}")
 
 
+def cmd_next_novel(args: argparse.Namespace) -> None:
+    """Skip current novel, clean its data, and activate the next one."""
+    config = load_config()
+    logger = PipelineLogger(config.path("logs_dir"))
+    queue = BookQueue(config, logger)
+    clean = not getattr(args, "keep_output", False)
+    novel = queue.skip_to_next_novel(clean_output=clean)
+    print(f"Skipped previous novel. Now active: {novel.title} by {novel.author}")
+    if novel.story_summary:
+        print(f"\nStory summary:\n{novel.story_summary}")
+    print(f"\nEpisodes planned: {novel.estimated_episodes}")
+    print("Run: python main.py run  (to generate episode 1)")
+
+
 def cmd_approve(args: argparse.Namespace) -> None:
     pipeline = Pipeline(load_config())
     pipeline.approve_and_post(args.bundle_id)
@@ -332,6 +346,17 @@ def main() -> None:
     add_parser.add_argument("--country", default="")
     add_parser.add_argument("--chapters", type=int, default=20)
     add_parser.set_defaults(func=cmd_add_novel)
+
+    next_parser = sub.add_parser(
+        "next-novel",
+        help="Skip current novel, clean its data, activate next in queue",
+    )
+    next_parser.add_argument(
+        "--keep-output",
+        action="store_true",
+        help="Keep output folders for the skipped novel",
+    )
+    next_parser.set_defaults(func=cmd_next_novel)
 
     approve_parser = sub.add_parser("approve", help="Approve a review bundle")
     approve_parser.add_argument("bundle_id")

@@ -14,12 +14,17 @@ from src.pipeline.logger import PipelineLogger
 from src.utils.json_parse import parse_llm_json
 
 STRATEGIST_SYSTEM = """You are a Story Arc Strategist for Instagram suspense reels.
-Design binge-worthy episodic arcs. Each episode hooks in 3 seconds and ends on a cliffhanger.
+Design binge-worthy episodic arcs with genuine storytelling — not vague summaries.
+Each episode must name characters, places, and specific plot events.
+Episodes chain like a TV series: each opens where the last cliffhanger left off.
 Original paraphrase only — never quote the book. Output valid JSON only."""
 
 BEAT_WRITER_SYSTEM = """You are an Episode Beat Writer. Refine arc JSON for scriptwriters.
-Each episode needs: plot_beat_summary, cumulative_synopsis (max 4 sentences),
-planned_hook, planned_cliffhanger, retention_angle. Output valid JSON only."""
+First create a tight novel-level story bible (logline + full-story summary in 6-8 sentences).
+Then ensure each episode has: plot_beat_summary (specific events, names, stakes),
+cumulative_synopsis (max 4 sentences), planned_hook, planned_cliffhanger, retention_angle.
+Episodes must feel connected — viewers should know WHERE we are in the story.
+Output valid JSON only."""
 
 
 class PlannerCrew:
@@ -36,7 +41,7 @@ class PlannerCrew:
         novel: Novel,
         episode_count: int,
         chapter_ranges: list[tuple[int, int]],
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
         ranges_text = "\n".join(
             f"Ep {i}: chapters {s}-{e}" for i, (s, e) in enumerate(chapter_ranges, 1)
         )
@@ -45,9 +50,13 @@ class PlannerCrew:
             f"Novel: {novel.title} by {novel.author} ({novel.country})\n"
             f"Total episodes: {episode_count}\n"
             f"Chapter mapping:\n{ranges_text}\n\n"
-            "Return JSON with keys: novel_logline, retention_strategy, episodes (array).\n"
+            "Return JSON with keys: novel_logline, story_summary, retention_strategy, episodes (array).\n"
+            "novel_logline: 1 punchy Hindi-friendly hook sentence for the whole novel.\n"
+            "story_summary: 6-8 sentences — full novel arc (setup, stakes, twists, ending tease). "
+            "Original paraphrase. Name the protagonist and central mystery.\n"
             "Each episode object: episode_num, plot_beat_summary, cumulative_synopsis,\n"
             "planned_hook, planned_cliffhanger, retention_angle.\n"
+            "plot_beat_summary must include character names and specific events — not generic 'tension rises'.\n"
             "Episodes must chain seamlessly for binge UX."
         )
 
@@ -60,7 +69,8 @@ class PlannerCrew:
 
         refine_prompt = (
             "Review and finalize this master arc JSON. "
-            "Ensure every episode has distinct hook + cliffhanger. "
+            "Ensure story_summary covers the FULL novel in 6-8 sentences. "
+            "Ensure every episode has distinct hook + cliffhanger with named characters and events. "
             "Tighten cumulative_synopsis to max 4 sentences each.\n\n"
             f"{json.dumps(arc_data, ensure_ascii=False)}"
         )
@@ -77,4 +87,11 @@ class PlannerCrew:
                 "planner_crew",
                 f"arc returned {len(episodes)} episodes, expected {episode_count}",
             )
-        return episodes[:episode_count]
+        return {
+            "novel_logline": final.get("novel_logline", arc_data.get("novel_logline", "")),
+            "story_summary": final.get("story_summary", arc_data.get("story_summary", "")),
+            "retention_strategy": final.get(
+                "retention_strategy", arc_data.get("retention_strategy", "")
+            ),
+            "episodes": episodes[:episode_count],
+        }

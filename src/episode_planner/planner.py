@@ -27,7 +27,17 @@ class EpisodePlanner:
 
         self.logger.start("episode_planner", f"{novel.title} — {episode_count} episodes (crewai)")
 
-        episodes_data = self._generate_master_arc(novel, episode_count, ranges)
+        arc_result = self._generate_master_arc(novel, episode_count, ranges)
+        if isinstance(arc_result, dict):
+            episodes_data = arc_result.get("episodes", [])
+            self.db.set_novel_story_bible(
+                novel.id,
+                novel_logline=arc_result.get("novel_logline", ""),
+                story_summary=arc_result.get("story_summary", ""),
+                retention_strategy=arc_result.get("retention_strategy", ""),
+            )
+        else:
+            episodes_data = arc_result
 
         for i, (start, end) in enumerate(ranges, start=1):
             ep_data = episodes_data[i - 1] if i - 1 < len(episodes_data) else {}
@@ -53,12 +63,13 @@ class EpisodePlanner:
         novel: Novel,
         episode_count: int,
         ranges: list[tuple[int, int]],
-    ) -> list[dict]:
+    ) -> dict:
         try:
             return self.planner_crew.create_master_arc(novel, episode_count, ranges)
         except Exception as exc:
             self.logger.warn("episode_planner", f"CrewAI arc failed: {exc} — fallback sequential")
-            return self._fallback_sequential(novel, episode_count, ranges)
+            episodes = self._fallback_sequential(novel, episode_count, ranges)
+            return {"episodes": episodes, "novel_logline": "", "story_summary": "", "retention_strategy": ""}
 
     def _fallback_sequential(
         self,

@@ -19,6 +19,9 @@ class Novel:
     estimated_episodes: int
     status: str
     current_episode: int = 0
+    novel_logline: str = ""
+    story_summary: str = ""
+    retention_strategy: str = ""
 
 
 @dataclass

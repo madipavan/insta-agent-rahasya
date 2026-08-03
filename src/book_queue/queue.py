@@ -74,6 +74,51 @@ class BookQueue:
         self.db.set_novel_status(novel.id, "completed")
         self.logger.info(f"Completed novel: {novel.title}")
 
+    def skip_to_next_novel(self, clean_output: bool = True) -> Novel:
+        """Abandon current novel, wipe its pipeline data, activate next in queue."""
+        active = self.db.get_active_novel()
+        if not active:
+            raise RuntimeError("No active novel to skip")
+
+        self.logger.info(f"Skipping novel: {active.title} (id={active.id})")
+        self.db.set_novel_status(active.id, "abandoned")
+        self.db.delete_novel_data(active.id)
+
+        if clean_output:
+            self._clean_novel_output(active)
+
+        self.ensure_queue()
+        next_novel = self.db.get_next_queued_novel()
+        if not next_novel:
+            raise RuntimeError("No novels left in queue after skip")
+
+        self.db.set_novel_status(next_novel.id, "active")
+        self.planner.create_outline(next_novel)
+        activated = self.db.get_novel(next_novel.id)
+        if not activated:
+            raise RuntimeError("Failed to activate next novel")
+        self.logger.info(f"Activated next novel: {activated.title} by {activated.author}")
+        return activated
+
+    def _clean_novel_output(self, novel: Novel) -> None:
+        """Remove generated output folders for a novel (no Instagram analytics needed)."""
+        import shutil
+
+        slug = novel.title.lower().replace(" ", "_").replace("'", "")
+        slug = "".join(c for c in slug if c.isalnum() or c == "_")
+        output_dir = self.config.path("output_dir")
+        removed = 0
+        for sub in ("review", "approved", "posted", "ready_to_upload", "work"):
+            folder = output_dir / sub
+            if not folder.exists():
+                continue
+            for child in folder.iterdir():
+                if child.is_dir() and slug in child.name.lower():
+                    shutil.rmtree(child, ignore_errors=True)
+                    removed += 1
+        if removed:
+            self.logger.info(f"Cleaned {removed} output folders for {novel.title}")
+
     def mark_episode_generated(self, context: EpisodeContext) -> None:
         self.db.set_episode_status(context.episode.id, "generated")
         self.db.increment_episode(context.novel.id)

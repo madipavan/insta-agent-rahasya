@@ -26,7 +26,7 @@ class ScriptState(TypedDict, total=False):
     previous: dict | None
 
 
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 5
 
 
 def _validate_script(data: dict[str, Any], min_chars: int, max_chars: int) -> str | None:
@@ -75,6 +75,8 @@ class ScriptGraphRunner:
             retention_angle=context.episode.retention_angle,
             min_chars=min_chars,
             max_chars=max_chars,
+            novel_logline=context.novel.novel_logline,
+            story_summary=context.novel.story_summary,
         )
 
         state: ScriptState = {
@@ -128,11 +130,20 @@ class ScriptGraphRunner:
     def _refine_node(self, state: ScriptState) -> ScriptState:
         err = state.get("error", "")
         self.logger.warn("script_graph", f"validation failed: {err} — refining")
-        extra = (
-            f"\n\nFIX REQUIRED: {err}. "
-            f"Rewrite with voiceover_script between {state['min_chars']}-{state['max_chars']} chars. "
-            "NO recap. Stronger hook. Sharper cliffhanger."
-        )
+        if "too short" in (err or ""):
+            extra = (
+                f"\n\nFIX REQUIRED: {err}. "
+                f"The script is TOO SHORT. EXPAND to at least {state['min_chars']} characters. "
+                f"Add specific plot events, character names, scene descriptions, dialogue beats. "
+                f"Tell a complete mini-story for this episode. Cinematic dubbing tone. "
+                f"Use dramatic pauses (…). NO vague filler."
+            )
+        else:
+            extra = (
+                f"\n\nFIX REQUIRED: {err}. "
+                f"Rewrite with voiceover_script between {state['min_chars']}-{state['max_chars']} chars. "
+                "NO recap. Named characters. Stronger hook. Sharper cliffhanger."
+            )
         data = self.crew.write_script(
             state["brief"] + extra,
             state["min_chars"],
@@ -144,6 +155,12 @@ class ScriptGraphRunner:
         if not state.get("error"):
             return "done"
         if state.get("attempt", 0) >= MAX_ATTEMPTS:
+            err = state.get("error", "")
+            if "too short" in (err or ""):
+                raise ValueError(
+                    f"Script too short after {MAX_ATTEMPTS} attempts: {err}. "
+                    f"Minimum {state['min_chars']} chars required for {self.config.script_min_seconds}s reel."
+                )
             self.logger.warn("script_graph", "max attempts — using best effort with trim")
             return "done"
         return "refine"

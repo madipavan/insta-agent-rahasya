@@ -102,7 +102,13 @@ class Database:
             if col not in ep_cols:
                 conn.execute(f"ALTER TABLE episodes ADD COLUMN {col} TEXT DEFAULT ''")
 
+        novel_cols = {row[1] for row in conn.execute("PRAGMA table_info(novels)").fetchall()}
+        for col in ("novel_logline", "story_summary", "retention_strategy"):
+            if col not in novel_cols:
+                conn.execute(f"ALTER TABLE novels ADD COLUMN {col} TEXT DEFAULT ''")
+
     def _row_to_novel(self, row: sqlite3.Row) -> Novel:
+        keys = row.keys()
         return Novel(
             id=row["id"],
             title=row["title"],
@@ -115,6 +121,9 @@ class Database:
             estimated_episodes=row["estimated_episodes"],
             status=row["status"],
             current_episode=row["current_episode"],
+            novel_logline=row["novel_logline"] if "novel_logline" in keys else "",
+            story_summary=row["story_summary"] if "story_summary" in keys else "",
+            retention_strategy=row["retention_strategy"] if "retention_strategy" in keys else "",
         )
 
     def _row_to_episode(self, row: sqlite3.Row) -> Episode:
@@ -409,6 +418,29 @@ class Database:
                 }
                 for r in rows
             ]
+
+    def set_novel_story_bible(
+        self,
+        novel_id: int,
+        novel_logline: str,
+        story_summary: str,
+        retention_strategy: str = "",
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                UPDATE novels SET novel_logline = ?, story_summary = ?, retention_strategy = ?
+                WHERE id = ?
+                """,
+                (novel_logline, story_summary, retention_strategy, novel_id),
+            )
+
+    def delete_novel_data(self, novel_id: int) -> None:
+        """Remove episode rows, review bundles, and post log for a novel."""
+        with self._connect() as conn:
+            conn.execute("DELETE FROM episodes WHERE novel_id = ?", (novel_id,))
+            conn.execute("DELETE FROM review_bundles WHERE novel_id = ?", (novel_id,))
+            conn.execute("DELETE FROM post_log WHERE novel_id = ?", (novel_id,))
 
     def set_novel_assets(self, novel_id: int, bgm_path: str, thumbnail_base_path: str) -> None:
         with self._connect() as conn:

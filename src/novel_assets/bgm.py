@@ -1,4 +1,4 @@
-"""Per-novel epic BGM — search YouTube by novel mood/keywords, download once, reuse."""
+"""Per-novel storytelling BGM — cinematic/instrumental only (never pop songs)."""
 
 from __future__ import annotations
 
@@ -17,9 +17,68 @@ from src.utils.ffmpeg_path import get_ffmpeg_exe
 _DURATION_SEC = 180
 _SYNTHETIC_MAX_BYTES = 900_000
 _DEVANAGARI = re.compile(r"[\u0900-\u097F]")
+_MIN_ACCEPT_SCORE = 8
 
-_PREFERRED_MARKERS = ("ncs", "no copyright", "nocopyrightsounds", "royalty free", "epic", "cinematic")
-_AVOID_MARKERS = ("vocal cover", "lyrics", "1 hour", "10 hours", "mix", "playlist", "live")
+# Storytelling / underscore only — NOT EDM drops or pop hits
+_PREFERRED_MARKERS = (
+    "cinematic",
+    "soundtrack",
+    "underscore",
+    "instrumental",
+    "ambient",
+    "dark piano",
+    "mystery",
+    "suspense",
+    "thriller",
+    "horror",
+    "dramatic",
+    "epic trailer",
+    "storytelling",
+    "background music",
+    "bgm",
+    "no vocals",
+    "no copyright",
+    "royalty free",
+    "free to use",
+)
+
+# Hard reject: pop songs, vocals, famous hits (e.g. Faded)
+_AVOID_MARKERS = (
+    "faded",
+    "alan walker",
+    "the weeknd",
+    "billie eilish",
+    "taylor swift",
+    "ed sheeran",
+    "drake",
+    "ariana",
+    "bts",
+    "lyrics",
+    "lyric",
+    "official music video",
+    "official video",
+    "mv",
+    "vocal",
+    "vocals",
+    "singing",
+    "cover",
+    "karaoke",
+    "remix",
+    "nightcore",
+    "sped up",
+    "slowed",
+    "tiktok",
+    "1 hour",
+    "10 hours",
+    "mix",
+    "playlist",
+    "live",
+    "concert",
+    "radio edit",
+    "feat.",
+    "ft.",
+    "featuring",
+)
 
 
 def fetch_novel_bgm(
@@ -29,28 +88,34 @@ def fetch_novel_bgm(
     logger: PipelineLogger,
     library_dir: Path | None = None,
 ) -> Path | None:
-    """Search and download epic BGM tailored to this novel. Cached at `output`."""
+    """Search and download cinematic storytelling BGM. Cached at `output`."""
     meta = output.with_suffix(".json")
     if output.exists() and meta.exists():
         try:
             info = json.loads(meta.read_text(encoding="utf-8"))
             if info.get("source") != "synthetic" and output.stat().st_size > _SYNTHETIC_MAX_BYTES:
-                return output
+                title = (info.get("title") or "").lower()
+                if title and any(bad in title for bad in _AVOID_MARKERS):
+                    logger.warn("bgm", f"rejecting cached pop/song track: {info.get('title')}")
+                    output.unlink(missing_ok=True)
+                    meta.unlink(missing_ok=True)
+                else:
+                    return output
         except (json.JSONDecodeError, OSError):
             pass
 
     query = _build_search_query(novel, keywords)
-    logger.start("bgm", f"searching for '{novel.title}': {query}")
+    logger.start("bgm", f"searching storytelling BGM for '{novel.title}': {query}")
 
-    url = _search_epic_track(query, logger)
+    url, track_title = _search_storytelling_track(query, logger)
     if not url:
         fallback = _build_fallback_query(keywords)
         logger.info(f"Retrying BGM search: {fallback}")
-        url = _search_epic_track(fallback, logger)
+        url, track_title = _search_storytelling_track(fallback, logger)
 
     if url and _download_from_youtube(url, output, logger):
-        _write_meta(output, novel, query, url, source="youtube")
-        logger.ok("bgm", output.name)
+        _write_meta(output, novel, query, url, source="youtube", title=track_title)
+        logger.ok("bgm", f"{output.name} ({track_title or 'untitled'})")
         return output
 
     if library_dir and _copy_library_track(novel, library_dir, output, logger):
@@ -82,6 +147,7 @@ def _copy_library_track(novel: Novel, library_dir: Path, output: Path, logger: P
     tracks = sorted(
         p for p in library_dir.glob("*.mp3")
         if p.stat().st_size > _SYNTHETIC_MAX_BYTES
+        and not any(bad in p.stem.lower() for bad in _AVOID_MARKERS)
     )
     if not tracks:
         return False
@@ -94,28 +160,50 @@ def _copy_library_track(novel: Novel, library_dir: Path, output: Path, logger: P
 
 def _english_keywords(keywords: list[str]) -> list[str]:
     en = [k.strip() for k in keywords if k and not _DEVANAGARI.search(k)]
-    return en or ["mystery", "thriller", "suspense", "spy", "dark"]
+    return en or ["mystery", "thriller", "suspense", "dark"]
 
 
 def _build_search_query(novel: Novel, keywords: list[str]) -> str:
-    title_words = [w for w in novel.title.split() if len(w) > 3 and not _DEVANAGARI.search(w)][:2]
-    mood = _english_keywords(keywords)[:4]
-    parts = ["NCS", "epic", "cinematic"] + mood + title_words
+    """Prefer mood + storytelling terms — never chase chart songs."""
+    mood = _english_keywords(keywords)[:3]
+    parts = [
+        "cinematic",
+        "instrumental",
+        "soundtrack",
+        "no vocals",
+        "royalty free",
+        "dark",
+        "mystery",
+        "suspense",
+    ] + mood
     return " ".join(dict.fromkeys(p.lower() for p in parts))
 
 
 def _build_fallback_query(keywords: list[str]) -> str:
-    mood = _english_keywords(keywords)[:3]
-    return " ".join(["epic", "cinematic", "no copyright", "NCS"] + mood)
+    mood = _english_keywords(keywords)[:2]
+    return " ".join(
+        ["dark cinematic underscore instrumental storytelling bgm no vocals"] + mood
+    )
 
 
 def _write_meta(
-    output: Path, novel: Novel, query: str, url: str = "", source: str = "youtube"
+    output: Path,
+    novel: Novel,
+    query: str,
+    url: str = "",
+    source: str = "youtube",
+    title: str = "",
 ) -> None:
     meta = output.with_suffix(".json")
     meta.write_text(
         json.dumps(
-            {"novel": novel.title, "search": query, "url": url, "source": source},
+            {
+                "novel": novel.title,
+                "search": query,
+                "url": url,
+                "source": source,
+                "title": title,
+            },
             indent=2,
         ),
         encoding="utf-8",
@@ -132,62 +220,81 @@ def _ytdlp_available() -> bool:
         return False
 
 
-def _search_epic_track(query: str, logger: PipelineLogger) -> str | None:
+def _search_storytelling_track(query: str, logger: PipelineLogger) -> tuple[str | None, str]:
     if not _ytdlp_available():
         logger.warn("bgm", "yt-dlp not available — pip install yt-dlp")
-        return None
+        return None, ""
 
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "extract_flat": True,
-        "default_search": "ytsearch8",
+        "default_search": "ytsearch10",
         "socket_timeout": 30,
     }
 
-    for search_q in (query, f"ncs {query}", f"epic cinematic {query}"):
+    search_queries = (
+        query,
+        f"cinematic mystery thriller instrumental soundtrack {query}",
+        "dark cinematic storytelling underscore instrumental no vocals royalty free",
+        "suspense thriller ambient piano bgm instrumental free to use",
+    )
+
+    for search_q in search_queries:
         try:
             import yt_dlp
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(f"ytsearch5:{search_q}", download=False)
+                info = ydl.extract_info(f"ytsearch8:{search_q}", download=False)
         except Exception as exc:
-            logger.warn("bgm", f"search '{search_q[:40]}': {exc}")
+            logger.warn("bgm", f"search '{search_q[:50]}': {exc}")
             continue
 
-        url = _pick_best_entry(info.get("entries") or [])
-        if url:
-            return url
+        picked = _pick_best_entry(info.get("entries") or [], logger)
+        if picked:
+            return picked
+    return None, ""
 
-    return None
 
-
-def _pick_best_entry(entries: list) -> str | None:
-    scored: list[tuple[int, str]] = []
+def _pick_best_entry(entries: list, logger: PipelineLogger) -> tuple[str, str] | None:
+    scored: list[tuple[int, str, str]] = []
 
     for entry in entries:
         if not entry:
             continue
         vid_id = entry.get("id")
-        title = (entry.get("title") or "").lower()
-        if not vid_id:
+        title = (entry.get("title") or "").strip()
+        title_l = title.lower()
+        if not vid_id or not title_l:
             continue
-        if any(bad in title for bad in _AVOID_MARKERS):
+
+        if any(bad in title_l for bad in _AVOID_MARKERS):
+            logger.info(f"bgm | skip song/vocal: {title[:60]}")
             continue
 
         score = 0
-        if any(good in title for good in _PREFERRED_MARKERS):
-            score += 10
-        if "epic" in title or "cinematic" in title or "dramatic" in title:
+        for good in _PREFERRED_MARKERS:
+            if good in title_l:
+                score += 4
+        if "instrumental" in title_l or "no vocal" in title_l:
+            score += 6
+        if "soundtrack" in title_l or "underscore" in title_l or "cinematic" in title_l:
             score += 5
-        if "ncs" in title or "no copyright" in title:
-            score += 8
-        scored.append((score, vid_id))
+        if "background music" in title_l or title_l.endswith(" bgm") or " bgm " in title_l:
+            score += 5
+        if "ncs" in title_l and "cinematic" not in title_l and "epic" not in title_l:
+            # Plain NCS often = dance/pop drops — demote hard
+            score -= 6
+
+        if score >= _MIN_ACCEPT_SCORE:
+            scored.append((score, vid_id, title))
 
     if not scored:
         return None
 
     scored.sort(key=lambda x: x[0], reverse=True)
-    return f"https://www.youtube.com/watch?v={scored[0][1]}"
+    best = scored[0]
+    logger.info(f"bgm | picked (score={best[0]}): {best[2][:70]}")
+    return f"https://www.youtube.com/watch?v={best[1]}", best[2]
 
 
 def _download_from_youtube(url: str, output: Path, logger: PipelineLogger) -> bool:

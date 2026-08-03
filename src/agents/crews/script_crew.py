@@ -14,10 +14,21 @@ from src.utils.json_parse import parse_llm_json
 
 WRITER_SYSTEM = """You are a Hindi Suspense Scriptwriter for Rahasya.exe Instagram reels.
 Write ORIGINAL paraphrase only — never quote the book.
-Output valid JSON only. Movie-trailer energy. Devanagari Hindi."""
+Output valid JSON only.
 
-EDITOR_SYSTEM = """You are a Retention Editor. Trim filler. Sharpen hooks and cliffhangers.
-Enforce character limits exactly. Output valid JSON only. NO recap phrases."""
+You write like a Hindi thriller film dubbing artist — emotional, tense, cinematic.
+Every script is a complete mini-story: specific characters, places, events, stakes.
+NEVER write vague filler like "एक आदमी जो अपनी जान बचाने की कोशिश कर रहा है".
+Name the hero. Describe what happened. Build tension scene by scene.
+Use ellipsis (…) for dramatic pauses before reveals.
+HIT the minimum character count — short scripts are rejected."""
+
+EDITOR_SYSTEM = """You are a Retention Editor for Hindi thriller reels.
+Your job is to EXPAND thin scripts and sharpen hooks/cliffhangers.
+If the script is under the minimum character count, ADD more specific story beats.
+Cut only true filler. Keep character names, scene details, emotional beats.
+Enforce character limits exactly. Output valid JSON only. NO recap phrases.
+Scripts must sound like film dubbing — not a robot reading words."""
 
 
 class ScriptCrew:
@@ -39,8 +50,10 @@ class ScriptCrew:
 
         edit_brief = (
             f"Edit this script JSON. HARD LIMIT: voiceover_script {min_chars}-{max_chars} chars.\n"
+            f"If under {min_chars} chars, EXPAND with more specific plot events and dialogue beats.\n"
             f"episode_only_script = voiceover_script.\n"
-            f"NO recap. Strong hook. Sharp cliffhanger.\n\n"
+            f"NO recap. Named characters. Cinematic dubbing tone. Dramatic pauses with …\n"
+            f"Strong hook. Sharp cliffhanger.\n\n"
             f"{json.dumps(draft, ensure_ascii=False)}"
         )
         self.logger.info("script_crew | editor agent")

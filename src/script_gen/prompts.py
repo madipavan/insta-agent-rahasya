@@ -5,11 +5,22 @@ CRITICAL LEGAL CONSTRAINTS:
 - NEVER reproduce the book's original prose verbatim, not even short quotes.
 - Write an ORIGINAL paraphrase/retelling of plot events in your own words.
 - Do NOT closely mirror the original chapter structure or sentence patterns.
-- Tone: casual, punchy, Hinglish-friendly where natural — polished, never sloppy.
+- Tone: cinematic Hindi narration — like a thriller film dubbing track, not a news reader.
 - VOICEOVER MUST BE IN HINDI (Devanagari script).
-- Think movie-trailer voiceover — hook in 3 seconds, end on cliffhanger.
 - NO recap. NO 'पिछले एपिसोड में'. Jump straight into today's action.
 - Viewers scroll fast — every sentence must earn attention.
+"""
+
+DUBBING_STYLE_BLOCK = """
+DUBBING / PERFORMANCE STYLE (write for voice actor delivery):
+- Narrate like a Hindi thriller film dubbing artist — emotion, tension, breath.
+- Use short punchy lines AND longer dramatic sentences. Vary rhythm.
+- Add natural pauses with ellipsis (…) after shocking reveals or before cliffhangers.
+- Name characters, places, objects — never say "एक आदमी" when you know his name.
+- Show specific scenes: what happened, who said what, what was found, where they ran.
+- Build a mini-story arc WITHIN this episode: setup → rising tension → peak → cliffhanger.
+- Episode 2+ must feel like a direct continuation — open on the consequence of last cliffhanger.
+- Do NOT be vague ("tension rises", "danger lurks") — tell WHAT happened.
 """
 
 SCRIPT_JSON_SCHEMA = """
@@ -38,13 +49,15 @@ def build_script_prompt(
     cumulative_synopsis: str,
     sample_scripts: list[str],
     previous_episode: dict | None = None,
-    min_seconds: int = 65,
-    max_seconds: int = 82,
+    min_seconds: int = 75,
+    max_seconds: int = 80,
     planned_hook: str = "",
     planned_cliffhanger: str = "",
     retention_angle: str = "",
     min_chars: int = 0,
     max_chars: int = 0,
+    novel_logline: str = "",
+    story_summary: str = "",
 ) -> str:
     samples = "\n---\n".join(sample_scripts[:3]) if sample_scripts else "No samples."
 
@@ -52,12 +65,28 @@ def build_script_prompt(
         min_chars = min_seconds * 11
         max_chars = max_seconds * 11
 
+    story_bible = ""
+    if novel_logline or story_summary:
+        story_bible = (
+            f"\nNOVEL STORY BIBLE (context only — do NOT read aloud):\n"
+            f"Logline: {novel_logline}\n"
+            f"Full arc: {story_summary}\n"
+            f"Episode {episode_num} of {total_episodes} — tell THIS chapter of the arc.\n"
+        )
+
     continuity_block = ""
     if episode_num > 1 and previous_episode:
         continuity_block = (
-            f"\nWRITER CONTEXT (do NOT speak aloud):\n"
+            f"\nCONTINUITY (do NOT recap aloud — weave into opening action):\n"
             f"Last cliffhanger: {previous_episode.get('cliffhanger', '')}\n"
-            f"Pick up IN MEDIAS RES from today's beat. Zero recap.\n"
+            f"Where we left off: {previous_episode.get('voiceover_excerpt', '')[:200]}\n"
+            f"Open IN MEDIAS RES — viewer must feel the story never stopped.\n"
+        )
+    elif episode_num == 1:
+        continuity_block = (
+            f"\nEPISODE 1 — SERIES PREMIERE:\n"
+            f"Hook the audience in 3 seconds. Introduce protagonist and central mystery.\n"
+            f"Set the world. End on a cliffhanger that makes them NEED episode 2.\n"
         )
 
     episode_brief = ""
@@ -71,17 +100,19 @@ def build_script_prompt(
 
     return (
         f"You write for Rahasya.exe — foreign thrillers Bollywood forgot.\n\n"
-        f"{LEGAL_BLOCK}\n\n"
-        f"STYLE (tone only):\n{samples}\n\n"
+        f"{LEGAL_BLOCK}\n"
+        f"{DUBBING_STYLE_BLOCK}\n\n"
+        f"STYLE REFERENCE (tone + length — match this energy and depth):\n{samples}\n\n"
         f"Novel: {novel_title} by {author} ({country})\n"
         f"Episode {episode_num} of {total_episodes}\n"
         f"Today's plot beat: {plot_beat}\n"
-        f"Background (never read aloud): {cumulative_synopsis}\n"
-        f"{continuity_block}{episode_brief}\n"
+        f"Story so far (never read aloud): {cumulative_synopsis}\n"
+        f"{story_bible}{continuity_block}{episode_brief}\n"
         f"HARD LIMITS:\n"
-        f"- voiceover_script: {min_chars}-{max_chars} characters ({min_seconds}-{max_seconds} sec spoken)\n"
+        f"- voiceover_script: MINIMUM {min_chars} characters, maximum {max_chars} "
+        f"({min_seconds}-{max_seconds} sec when spoken)\n"
+        f"- Scripts under {min_chars} chars will be REJECTED. Fill the full runtime with story.\n"
         f"- Must fit Instagram carousel: max 10 slides\n"
-        f"- Total reel under 90 seconds including intro/outro\n"
-        f"- Punchy sentences. Cut filler. Strong hook. Sharp cliffhanger.\n"
+        f"- Cinematic dubbing narration. Specific events. Named characters. Emotional delivery.\n"
         f"{SCRIPT_JSON_SCHEMA}"
     )

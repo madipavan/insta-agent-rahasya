@@ -76,6 +76,31 @@ class MetaScheduler:
                 reel_path, static_paths, caption, bundle_id, thumbnail_path
             )
 
+        try:
+            return self._queue_posts_configured(
+                reel_path,
+                static_paths,
+                caption,
+                bundle_id,
+                thumbnail_path=thumbnail_path,
+                post_details=post_details,
+            )
+        except (requests.RequestException, RuntimeError, TimeoutError) as exc:
+            self.logger.warn("meta", f"API failed ({exc}) — saving package for manual upload")
+            return self._save_manual_package(
+                reel_path, static_paths, caption, bundle_id, thumbnail_path
+            )
+
+    def _queue_posts_configured(
+        self,
+        reel_path: Path,
+        static_paths: list[Path],
+        caption: str,
+        bundle_id: str,
+        *,
+        thumbnail_path: Path | None = None,
+        post_details: PostDetails | None = None,
+    ) -> str:
         reel_caption = post_details.reel_caption if post_details else caption
         carousel_caption = (
             post_details.carousel_caption if post_details else caption

@@ -36,6 +36,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check required secrets
+        run: |
+          if [ -z "$GROQ_API_KEY" ]; then
+            echo "::error::GROQ_API_KEY secret is missing. Add it in Settings → Secrets → Actions"
+            exit 1
+          fi
+          if [ -z "$PEXELS_API_KEY" ]; then
+            echo "::warning::PEXELS_API_KEY secret is missing — stock footage may fail"
+          fi
+
       - name: Restore pipeline state
         uses: actions/cache/restore@v4
         id: state_cache
@@ -69,13 +79,14 @@ jobs:
           key: rahasya-state-${{ github.ref }}-${{ github.run_id }}
 
       - name: Upload latest output
-        if: success()
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: latest-episode-${{ github.run_number }}
           path: |
             output/posted/**/*
             output/ready_to_upload/**/*
+            output/work/**/*
             logs/*.log
           retention-days: 14
           if-no-files-found: ignore

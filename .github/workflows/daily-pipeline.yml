@@ -66,6 +66,10 @@ jobs:
       - name: Install dependencies
         run: bash scripts/gha_setup.sh
 
+      - name: Verify Meta token
+        if: env.META_ACCESS_TOKEN != ''
+        run: python main.py meta-test
+
       - name: Run pipeline
         run: python main.py run
 

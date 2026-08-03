@@ -48,12 +48,13 @@ class MetaScheduler:
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
         self.config = config
         self.logger = logger
-        self.ig_user_id = config.meta_ig_user_id
-        self.access_token = config.meta_access_token
-        self.page_id = config.meta_page_id
+        self.ig_user_id = (config.meta_ig_user_id or "").strip()
+        self.access_token = (config.meta_access_token or "").strip()
+        self.page_id = (config.meta_page_id or "").strip()
 
     def is_configured(self) -> bool:
-        return bool(self.ig_user_id and self.access_token)
+        token = (self.access_token or "").strip()
+        return bool(self.ig_user_id and token and token.startswith("EAA"))
 
     def queue_posts(
         self,
@@ -166,6 +167,7 @@ class MetaScheduler:
         cover_url: str | None = None,
         publish_at: datetime | None = None,
     ) -> str:
+        del publish_at
         params: dict[str, str] = {
             "access_token": self.access_token,
             "media_type": "REELS",
@@ -175,14 +177,15 @@ class MetaScheduler:
         }
         if cover_url:
             params["cover_url"] = cover_url
-        if publish_at:
-            params["publish_at"] = str(self._unix_publish_at(publish_at))
+        # Do not pass publish_at here — Instagram rejects it on /media container create.
 
         resp = requests.post(
             f"{self.GRAPH_URL}/{self.ig_user_id}/media",
             params=params,
             timeout=60,
         )
+        if resp.status_code >= 400:
+            self._log_api_error("reel container", resp)
         resp.raise_for_status()
         data = resp.json()
         container_id = data["id"]
@@ -244,6 +247,8 @@ class MetaScheduler:
             params=params,
             timeout=60,
         )
+        if resp.status_code >= 400:
+            self._log_api_error("media_publish", resp)
         resp.raise_for_status()
         publish_id = resp.json().get("id", "")
         self.logger.info(f"Published container {container_id} → {publish_id}")
@@ -274,6 +279,7 @@ class MetaScheduler:
         *,
         publish_at: datetime | None = None,
     ) -> str:
+        del publish_at
         child_ids: list[str] = []
         for img_path in image_paths:
             child_id = self._upload_image_container(img_path)
@@ -286,14 +292,14 @@ class MetaScheduler:
             "children": ",".join(child_ids),
             "caption": caption[:2200],
         }
-        if publish_at:
-            params["publish_at"] = str(self._unix_publish_at(publish_at))
 
         resp = requests.post(
             f"{self.GRAPH_URL}/{self.ig_user_id}/media",
             params=params,
             timeout=60,
         )
+        if resp.status_code >= 400:
+            self._log_api_error("carousel container", resp)
         resp.raise_for_status()
         container_id = resp.json()["id"]
         self.logger.info(f"Carousel container created: {container_id} ({len(child_ids)} slides)")
@@ -427,16 +433,33 @@ class MetaScheduler:
         )
         return f"manual_package:{bundle_id}"
 
+    def _log_api_error(self, step: str, resp: requests.Response) -> None:
+        try:
+            detail = resp.json().get("error", {})
+            message = detail.get("message", resp.text[:300])
+            code = detail.get("code", resp.status_code)
+            subcode = detail.get("error_subcode", "")
+            self.logger.warn("meta", f"{step} failed [{code}/{subcode}]: {message}")
+        except (ValueError, AttributeError):
+            self.logger.warn("meta", f"{step} failed: {resp.text[:300]}")
+
     @staticmethod
     def verify_connection(config: AppConfig) -> dict:
         """Test Meta API credentials and return account info."""
-        if not config.meta_access_token or not config.meta_ig_user_id:
+        token = (config.meta_access_token or "").strip()
+        ig_id = (config.meta_ig_user_id or "").strip()
+        if not token or not ig_id:
             return {"ok": False, "error": "META_ACCESS_TOKEN or META_IG_USER_ID missing"}
+        if not token.startswith("EAA"):
+            return {
+                "ok": False,
+                "error": "META_ACCESS_TOKEN must start with EAA (Facebook Graph API user token)",
+            }
 
         resp = requests.get(
-            f"https://graph.facebook.com/v21.0/{config.meta_ig_user_id}",
+            f"https://graph.facebook.com/v21.0/{ig_id}",
             params={
-                "access_token": config.meta_access_token,
+                "access_token": token,
                 "fields": "id,username,name,profile_picture_url",
             },
             timeout=30,

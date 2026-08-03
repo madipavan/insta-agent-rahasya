@@ -41,6 +41,11 @@ class MetaScheduler:
 
     GRAPH_URL = "https://graph.facebook.com/v21.0"
     RUPLOAD_URL = "https://rupload.facebook.com/ig-api-upload/v21.0"
+    PHOTO_PERMISSIONS = (
+        "pages_manage_posts",
+        "pages_read_engagement",
+        "pages_show_list",
+    )
 
     POLL_INTERVAL_SEC = 5
     POLL_MAX_ATTEMPTS = 60
@@ -239,8 +244,7 @@ class MetaScheduler:
             "access_token": self.access_token,
             "creation_id": container_id,
         }
-        if publish_at:
-            params["publish_at"] = str(self._unix_publish_at(publish_at))
+        # Instagram Graph API publishes immediately — scheduling is handled by our publish job.
 
         resp = requests.post(
             f"{self.GRAPH_URL}/{self.ig_user_id}/media_publish",
@@ -341,7 +345,9 @@ class MetaScheduler:
                     files={"source": (image_path.name, f, "image/png")},
                     timeout=60,
                 )
-            resp.raise_for_status()
+            if resp.status_code >= 400:
+                self._log_api_error("page photo upload", resp)
+                return None
             photo_id = resp.json().get("id")
             if not photo_id:
                 return None
@@ -350,7 +356,9 @@ class MetaScheduler:
                 params={"access_token": self.access_token, "fields": "images"},
                 timeout=30,
             )
-            url_resp.raise_for_status()
+            if url_resp.status_code >= 400:
+                self._log_api_error("photo url lookup", url_resp)
+                return None
             images = url_resp.json().get("images", [])
             if images:
                 return images[0].get("source")
@@ -444,6 +452,74 @@ class MetaScheduler:
             self.logger.warn("meta", f"{step} failed: {resp.text[:300]}")
 
     @staticmethod
+    def inspect_token(token: str, app_id: str = "", app_secret: str = "") -> dict:
+        """Return token type, app id, and granted scopes from Graph debug_token."""
+        token = (token or "").strip()
+        if not token:
+            return {"ok": False, "error": "No token"}
+
+        app_id = (app_id or "").strip()
+        app_secret = (app_secret or "").strip()
+        app_token = f"{app_id}|{app_secret}" if app_id and app_secret else token
+
+        resp = requests.get(
+            "https://graph.facebook.com/v21.0/debug_token",
+            params={"input_token": token, "access_token": app_token},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            err = resp.json().get("error", {})
+            return {"ok": False, "error": err.get("message", resp.text)}
+
+        data = resp.json().get("data", {})
+        return {
+            "ok": True,
+            "type": data.get("type", "?"),
+            "app_id": data.get("app_id"),
+            "is_valid": data.get("is_valid"),
+            "scopes": data.get("scopes", []) or [],
+        }
+
+    @staticmethod
+    def probe_photo_upload(config: AppConfig) -> dict:
+        """Try uploading a tiny PNG to the Page (carousel + cover need this)."""
+        token = (config.meta_access_token or "").strip()
+        page_id = (config.meta_page_id or "").strip()
+        if not token or not page_id:
+            return {"ok": False, "error": "META_ACCESS_TOKEN or META_PAGE_ID missing"}
+
+        # 1x1 transparent PNG
+        png = (
+            b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+            b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+            b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+        )
+        try:
+            resp = requests.post(
+                f"https://graph.facebook.com/v21.0/{page_id}/photos",
+                data={
+                    "access_token": token,
+                    "published": "false",
+                    "temporary": "true",
+                },
+                files={"source": ("probe.png", png, "image/png")},
+                timeout=60,
+            )
+        except requests.RequestException as exc:
+            return {"ok": False, "error": str(exc)}
+
+        if resp.status_code == 200:
+            return {"ok": True, "photo_id": resp.json().get("id")}
+
+        err = resp.json().get("error", {})
+        return {
+            "ok": False,
+            "error": err.get("message", resp.text),
+            "code": err.get("code"),
+            "subcode": err.get("error_subcode"),
+        }
+
+    @staticmethod
     def verify_connection(config: AppConfig) -> dict:
         """Test Meta API credentials and return account info."""
         token = (config.meta_access_token or "").strip()
@@ -453,7 +529,7 @@ class MetaScheduler:
         if not token.startswith("EAA"):
             return {
                 "ok": False,
-                "error": "META_ACCESS_TOKEN must start with EAA (Facebook Graph API user token)",
+                "error": "META_ACCESS_TOKEN must start with EAA (Facebook Graph API token)",
             }
 
         resp = requests.get(
@@ -466,7 +542,23 @@ class MetaScheduler:
         )
         if resp.status_code != 200:
             return {"ok": False, "error": resp.json().get("error", {}).get("message", resp.text)}
-        return {"ok": True, "account": resp.json()}
+
+        token_info = MetaScheduler.inspect_token(
+            token, config.meta_app_id, config.meta_app_secret
+        )
+        photo_probe = MetaScheduler.probe_photo_upload(config)
+        missing = []
+        if token_info.get("ok"):
+            scopes = set(token_info.get("scopes", []))
+            missing = [p for p in MetaScheduler.PHOTO_PERMISSIONS if p not in scopes]
+
+        return {
+            "ok": True,
+            "account": resp.json(),
+            "token_info": token_info,
+            "photo_probe": photo_probe,
+            "missing_photo_permissions": missing,
+        }
 
     @staticmethod
     def discover_accounts(token: str) -> dict:
@@ -482,10 +574,10 @@ class MetaScheduler:
                     "Rahasya needs a Facebook Graph API token (EAA...) from Graph API Explorer."
                 ),
             }
-        if not token.startswith("EAA"):
+        if not token.startswith("EAA") and not token.startswith("EAAG"):
             return {
                 "ok": False,
-                "error": "Token must start with EAA (Facebook Graph API user/page token)",
+                "error": "Token must be a Facebook Graph API token (usually starts with EAA...)",
             }
 
         me = requests.get(
@@ -497,20 +589,55 @@ class MetaScheduler:
             err = me.json().get("error", {})
             return {"ok": False, "error": err.get("message", me.text)}
 
-        pages = requests.get(
-            "https://graph.facebook.com/v21.0/me/accounts",
-            params={
-                "access_token": token,
-                "fields": "id,name,access_token,instagram_business_account{id,username,name}",
-            },
-            timeout=30,
-        )
-        if pages.status_code != 200:
-            err = pages.json().get("error", {})
-            return {"ok": False, "error": err.get("message", pages.text)}
+        pages: list[dict] = []
+        url = "https://graph.facebook.com/v21.0/me/accounts"
+        params = {
+            "access_token": token,
+            "fields": "id,name,access_token,instagram_business_account{id,username,name}",
+            "limit": "100",
+        }
+        while url:
+            resp = requests.get(url, params=params if "me/accounts" in url else None, timeout=30)
+            if resp.status_code != 200:
+                err = resp.json().get("error", {})
+                return {"ok": False, "error": err.get("message", resp.text)}
+            body = resp.json()
+            pages.extend(body.get("data", []))
+            next_url = body.get("paging", {}).get("next")
+            url = next_url or ""
+            params = {}
 
         return {
             "ok": True,
             "user": me.json(),
-            "pages": pages.json().get("data", []),
+            "pages": pages,
         }
+
+    @staticmethod
+    def fetch_page_token(user_token: str, page_id: str) -> dict:
+        """Get Page access token when /me/accounts is empty but PAGE_ID is known."""
+        user_token = (user_token or "").strip()
+        page_id = (page_id or "").strip()
+        if not user_token or not page_id:
+            return {"ok": False, "error": "Need user token and page id"}
+
+        resp = requests.get(
+            f"https://graph.facebook.com/v21.0/{page_id}",
+            params={"access_token": user_token, "fields": "id,name,access_token"},
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            err = resp.json().get("error", {})
+            return {"ok": False, "error": err.get("message", resp.text)}
+
+        data = resp.json()
+        page_token = data.get("access_token", "")
+        if not page_token:
+            return {
+                "ok": False,
+                "error": (
+                    "No page token returned — your Facebook user may not be Admin on this Page. "
+                    "Add yourself as Page Admin or create a new Page with this Facebook account."
+                ),
+            }
+        return {"ok": True, "page": data, "page_token": page_token}

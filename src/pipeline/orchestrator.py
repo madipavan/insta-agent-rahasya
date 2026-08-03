@@ -134,8 +134,15 @@ class Pipeline:
                     bundle_dir,
                 )
                 self.logger.ok("pipeline", f"awaiting review: {bundle_id}")
-            else:
+            elif self.config.auto_publish:
                 self.approve_and_post(bundle_id)
+            else:
+                self.db.set_review_status(bundle_id, "pending_publish")
+                self.logger.ok(
+                    "pipeline",
+                    f"generated — queued for publish at {self.config.post_time} "
+                    f"(run: python main.py publish): {bundle_id}",
+                )
 
             return bundle_id
         except Exception as exc:
@@ -204,3 +211,39 @@ class Pipeline:
                 error=reason,
             )
         self.telegram.send_info(f"❌ Rejected: `{bundle_id}` — {reason}")
+
+    def publish_pending(self) -> str | None:
+        """Post the oldest bundle queued with pending_publish (after min delay)."""
+        from datetime import datetime, timedelta
+        from zoneinfo import ZoneInfo
+
+        bundles = self.db.list_pending_publish()
+        if not bundles:
+            self.logger.info("publish | no bundles waiting")
+            return None
+
+        min_age = timedelta(hours=self.config.min_publish_delay_hours)
+        now = datetime.now(ZoneInfo(self.config.timezone))
+        eligible: list[dict] = []
+        for bundle in bundles:
+            created_raw = bundle.get("metadata", {}).get("created_at", "")
+            try:
+                created = datetime.fromisoformat(created_raw)
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=ZoneInfo(self.config.timezone))
+            except ValueError:
+                created = now - min_age
+            if now - created >= min_age:
+                eligible.append(bundle)
+
+        if not eligible:
+            self.logger.info(
+                f"publish | waiting — next bundle needs "
+                f"{self.config.min_publish_delay_hours}h after generation"
+            )
+            return None
+
+        bundle_id = eligible[0]["bundle_id"]
+        self.logger.start("publish", bundle_id)
+        self.approve_and_post(bundle_id)
+        return bundle_id

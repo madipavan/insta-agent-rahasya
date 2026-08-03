@@ -2,7 +2,7 @@ name: Daily Pipeline
 
 on:
   schedule:
-    # 5:00 PM IST = 11:30 UTC — generates content, schedules Meta post for next day 7:30 PM
+    # 5:00 PM IST = 11:30 UTC — generate content only (publish at 7:30 PM next day)
     - cron: "30 11 * * *"
   workflow_dispatch:
 
@@ -53,6 +53,7 @@ jobs:
           path: |
             data
             output/stock_cache
+            output/review
           key: rahasya-state-${{ github.ref }}
           restore-keys: |
             rahasya-state-${{ github.ref }}-
@@ -80,6 +81,7 @@ jobs:
           path: |
             data
             output/stock_cache
+            output/review
           key: rahasya-state-${{ github.ref }}-${{ github.run_id }}
 
       - name: Upload latest output

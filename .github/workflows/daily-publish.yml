@@ -1,0 +1,62 @@
+name: Daily Publish
+
+on:
+  schedule:
+    # 7:30 PM IST = 14:00 UTC — posts queued bundle from yesterday's generate
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: daily-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
+      META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
+      META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore pipeline state
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data
+            output
+          key: rahasya-state-${{ github.ref }}
+          restore-keys: |
+            rahasya-state-${{ github.ref }}-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: bash scripts/gha_setup.sh
+
+      - name: Verify Meta token
+        if: env.META_ACCESS_TOKEN != ''
+        run: python main.py meta-test
+
+      - name: Publish to Instagram
+        run: python main.py publish
+
+      - name: Save pipeline state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            output
+          key: rahasya-state-${{ github.ref }}-${{ github.run_id }}

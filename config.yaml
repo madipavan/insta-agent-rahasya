@@ -34,6 +34,9 @@ script_max_seconds: 82
 cta: "Follow for the next part 👀"
 hashtags: "#thrillerbooks #suspensenovel #bookstagram #rahaysaexe #booktok"
 review_required: false
+# false = generate now, publish later via `python main.py publish` (or publish workflow at post_time)
+auto_publish: false
+min_publish_delay_hours: 20
 
 # Posting provider: "meta" (Instagram Graph API) or "metricool"
 post_provider: meta

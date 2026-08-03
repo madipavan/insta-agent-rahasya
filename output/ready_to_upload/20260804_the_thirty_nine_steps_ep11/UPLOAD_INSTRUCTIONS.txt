@@ -1,0 +1,4 @@
+Meta API not configured. Upload manually:
+1. reel.mp4 as Instagram Reel (use thumbnail.png as cover)
+2. static_post_*.png as carousel (3 slides)
+Scheduled time: 19:30 Asia/Kolkata

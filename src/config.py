@@ -84,6 +84,8 @@ class AppConfig:
     cta: str = "Follow for the next part 👀"
     hashtags: str = "#thrillerbooks #suspensenovel #bookstagram"
     review_required: bool = True
+    auto_publish: bool = False
+    min_publish_delay_hours: int = 20
     caption_template: str = ""
     post_provider: str = "meta"
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
@@ -150,6 +152,8 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         cta=raw.get("cta", "Follow for the next part 👀"),
         hashtags=raw.get("hashtags", "#thrillerbooks"),
         review_required=raw.get("review_required", True),
+        auto_publish=raw.get("auto_publish", False),
+        min_publish_delay_hours=int(raw.get("min_publish_delay_hours", 20)),
         caption_template=raw.get("caption_template", ""),
         post_provider=raw.get("post_provider", "meta"),
         discovery=_merge_dataclass(DiscoveryConfig, raw.get("discovery", {})),

@@ -20,6 +20,22 @@ from src.pipeline.orchestrator import Pipeline
 from src.review.telegram import TelegramBot
 
 
+def cmd_publish(args: argparse.Namespace) -> None:
+    """Publish the oldest queued bundle to Meta (run at post_time)."""
+    config = load_config()
+    if getattr(args, "now", False):
+        config.min_publish_delay_hours = 0
+    pipeline = Pipeline(config)
+    bundle_id = pipeline.publish_pending()
+    if bundle_id:
+        print(f"Published: {bundle_id}")
+    else:
+        if getattr(args, "now", False):
+            print("Nothing to publish (no bundles in pending_publish queue).")
+        else:
+            print("Nothing to publish yet (waiting for min_publish_delay_hours).")
+
+
 def cmd_run(_: argparse.Namespace) -> None:
     pipeline = Pipeline(load_config())
     bundle_id = pipeline.run()
@@ -161,18 +177,39 @@ def cmd_meta_test(_: argparse.Namespace) -> None:
 
     config = load_config()
     result = MetaScheduler.verify_connection(config)
-    if result["ok"]:
-        acct = result["account"]
-        print("✅ Meta connection OK")
-        print(f"  Instagram: @{acct.get('username', '?')} ({acct.get('name', '')})")
-        print(f"  IG User ID: {acct.get('id')}")
-    else:
+    if not result["ok"]:
         print(f"❌ Meta connection failed: {result['error']}")
         print("\nRun: python main.py meta-setup  (after setting META_ACCESS_TOKEN in .env)")
         print("\nRequired .env vars:")
         print("  META_ACCESS_TOKEN  — EAA... token from Graph API Explorer (NOT Instagram Messaging token)")
         print("  META_IG_USER_ID    — Instagram Business account ID")
         print("  META_PAGE_ID       — Facebook Page ID (for cover image upload)")
+        sys.exit(1)
+
+    acct = result["account"]
+    print("✅ Meta connection OK")
+    print(f"  Instagram: @{acct.get('username', '?')} ({acct.get('name', '')})")
+    print(f"  IG User ID: {acct.get('id')}")
+
+    token_info = result.get("token_info") or {}
+    if token_info.get("ok"):
+        print(f"  Token type: {token_info.get('type')} | App ID: {token_info.get('app_id')}")
+        scopes = token_info.get("scopes") or []
+        if scopes:
+            print(f"  Scopes: {', '.join(scopes)}")
+
+    missing = result.get("missing_photo_permissions") or []
+    if missing:
+        print(f"\n⚠️  Missing for carousel/cover: {', '.join(missing)}")
+        print("  Graph API Explorer → add permissions → Generate User token")
+        print("  Then: python main.py meta-setup  (get fresh PAGE token)")
+
+    photo = result.get("photo_probe") or {}
+    if photo.get("ok"):
+        print("✅ Page photo upload OK (carousel + thumbnail will work)")
+    else:
+        print(f"\n❌ Page photo upload failed: {photo.get('error', 'unknown')}")
+        print("  Fix: add pages_manage_posts, regenerate token, run meta-setup again")
         sys.exit(1)
 
 
@@ -186,13 +223,14 @@ def cmd_meta_setup(_: argparse.Namespace) -> None:
 
     load_dotenv()
     token = os.getenv("META_ACCESS_TOKEN", "").strip()
+    page_id = os.getenv("META_PAGE_ID", "").strip()
     if not token:
         print("Add META_ACCESS_TOKEN to .env first, then run this command again.")
         print("\nHow to get the RIGHT token:")
         print("  1. https://developers.facebook.com/tools/explorer")
         print("  2. Select YOUR Meta app (not Instagram Messaging only)")
         print("  3. Permissions: instagram_basic, instagram_content_publish,")
-        print("     pages_show_list, pages_read_engagement")
+        print("     pages_show_list, pages_read_engagement, pages_manage_posts")
         print("  4. Generate Access Token → copy token starting with EAA...")
         print("\nDo NOT use 'Generate token' on Instagram API → Messaging setup screen.")
         sys.exit(1)
@@ -206,8 +244,40 @@ def cmd_meta_setup(_: argparse.Namespace) -> None:
     pages = result["pages"]
     print(f"✅ Token valid for Facebook user: {user.get('name')} ({user.get('id')})")
     if not pages:
-        print("\n❌ No Facebook Pages found.")
-        print("Create a Page at facebook.com/pages/create and link it to Instagram.")
+        if page_id:
+            print(f"\nTrying to fetch Page token for META_PAGE_ID={page_id} ...")
+            page_result = MetaScheduler.fetch_page_token(token, page_id)
+            if page_result["ok"]:
+                page = page_result["page"]
+                page_token = page_result["page_token"]
+                print(f"\n✅ Page token found for: {page.get('name')} ({page.get('id')})")
+                print("\nReplace META_ACCESS_TOKEN in .env with this PAGE token:")
+                print(page_token)
+                print("\nThen run: python main.py meta-test")
+                return
+            print(f"\n❌ Could not get Page token: {page_result['error']}")
+
+        print("\n❌ No Facebook Pages found for this Facebook account via API.")
+        print("\nInstagram can show 'connected to Page' but the API only sees Pages")
+        print("where THIS Facebook user is Admin/Editor:")
+        print(f"  Logged in as: {user.get('name')} (ID {user.get('id')})")
+        print("\nCommon fixes:")
+        print("  1. Create a NEW Facebook Page while logged in as this same Facebook account:")
+        print("     https://www.facebook.com/pages/create")
+        print("     Name: Rahasya.exe | Category: Media/Brand")
+        print("  2. Instagram app → Profile → Edit profile → Page → select that Page")
+        print("  3. In Graph API Explorer, regenerate token with permissions:")
+        print("     pages_show_list, pages_read_engagement, pages_manage_posts,")
+        print("     instagram_basic, instagram_content_publish")
+        print("  4. In Explorer, open 'User or Page' dropdown — if your Page appears,")
+        print("     select the Page and generate a Page token instead.")
+        print("\nIf the Page was created with a different Facebook login, either:")
+        print("  - Log into Graph API Explorer with that Facebook account, OR")
+        print("  - Add this account as Admin on the Page (Page Settings → Page access)")
+        print("\nManual fallback (if you already have IDs from Meta developer dashboard):")
+        print("  META_IG_USER_ID=17841437267653762   # from Instagram API setup")
+        print("  META_PAGE_ID=<your Facebook Page numeric ID>")
+        print("  Then run: python main.py meta-test")
         sys.exit(1)
 
     print("\nCopy these into .env and GitHub Secrets:\n")
@@ -230,6 +300,16 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
 
     sub.add_parser("run", help="Generate today's content").set_defaults(func=cmd_run)
+    publish_parser = sub.add_parser(
+        "publish",
+        help="Post oldest queued bundle to Instagram (scheduled publish step)",
+    )
+    publish_parser.add_argument(
+        "--now",
+        action="store_true",
+        help="Skip min_publish_delay_hours (for testing)",
+    )
+    publish_parser.set_defaults(func=cmd_publish)
     sub.add_parser("status", help="Show pipeline status").set_defaults(func=cmd_status)
     sub.add_parser("queue", help="Show novel queue").set_defaults(func=cmd_queue)
     sub.add_parser("discover", help="Run novel discovery").set_defaults(func=cmd_discover)

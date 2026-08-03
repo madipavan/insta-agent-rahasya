@@ -393,6 +393,23 @@ class Database:
                 for r in rows
             ]
 
+    def list_pending_publish(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM review_bundles WHERE status = 'pending_publish' ORDER BY id"
+            ).fetchall()
+            return [
+                {
+                    "bundle_id": r["bundle_id"],
+                    "novel_id": r["novel_id"],
+                    "episode_num": r["episode_num"],
+                    "bundle_path": r["bundle_path"],
+                    "status": r["status"],
+                    "metadata": json.loads(r["metadata_json"] or "{}"),
+                }
+                for r in rows
+            ]
+
     def set_novel_assets(self, novel_id: int, bgm_path: str, thumbnail_base_path: str) -> None:
         with self._connect() as conn:
             conn.execute(

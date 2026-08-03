@@ -467,3 +467,50 @@ class MetaScheduler:
         if resp.status_code != 200:
             return {"ok": False, "error": resp.json().get("error", {}).get("message", resp.text)}
         return {"ok": True, "account": resp.json()}
+
+    @staticmethod
+    def discover_accounts(token: str) -> dict:
+        """List Facebook Pages + linked Instagram IDs for a Graph API user token."""
+        token = (token or "").strip()
+        if not token:
+            return {"ok": False, "error": "No token provided"}
+        if token.startswith("IGA"):
+            return {
+                "ok": False,
+                "error": (
+                    "This looks like an Instagram Login token (IGA...). "
+                    "Rahasya needs a Facebook Graph API token (EAA...) from Graph API Explorer."
+                ),
+            }
+        if not token.startswith("EAA"):
+            return {
+                "ok": False,
+                "error": "Token must start with EAA (Facebook Graph API user/page token)",
+            }
+
+        me = requests.get(
+            "https://graph.facebook.com/v21.0/me",
+            params={"access_token": token, "fields": "id,name"},
+            timeout=30,
+        )
+        if me.status_code != 200:
+            err = me.json().get("error", {})
+            return {"ok": False, "error": err.get("message", me.text)}
+
+        pages = requests.get(
+            "https://graph.facebook.com/v21.0/me/accounts",
+            params={
+                "access_token": token,
+                "fields": "id,name,access_token,instagram_business_account{id,username,name}",
+            },
+            timeout=30,
+        )
+        if pages.status_code != 200:
+            err = pages.json().get("error", {})
+            return {"ok": False, "error": err.get("message", pages.text)}
+
+        return {
+            "ok": True,
+            "user": me.json(),
+            "pages": pages.json().get("data", []),
+        }

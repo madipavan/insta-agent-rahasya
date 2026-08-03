@@ -168,11 +168,61 @@ def cmd_meta_test(_: argparse.Namespace) -> None:
         print(f"  IG User ID: {acct.get('id')}")
     else:
         print(f"❌ Meta connection failed: {result['error']}")
+        print("\nRun: python main.py meta-setup  (after setting META_ACCESS_TOKEN in .env)")
         print("\nRequired .env vars:")
-        print("  META_ACCESS_TOKEN  — long-lived page/user token with instagram_content_publish")
+        print("  META_ACCESS_TOKEN  — EAA... token from Graph API Explorer (NOT Instagram Messaging token)")
         print("  META_IG_USER_ID    — Instagram Business account ID")
         print("  META_PAGE_ID       — Facebook Page ID (for cover image upload)")
         sys.exit(1)
+
+
+def cmd_meta_setup(_: argparse.Namespace) -> None:
+    """Discover Page ID + Instagram ID from a Graph API user token."""
+    import os
+
+    from dotenv import load_dotenv
+
+    from src.scheduler.meta import MetaScheduler
+
+    load_dotenv()
+    token = os.getenv("META_ACCESS_TOKEN", "").strip()
+    if not token:
+        print("Add META_ACCESS_TOKEN to .env first, then run this command again.")
+        print("\nHow to get the RIGHT token:")
+        print("  1. https://developers.facebook.com/tools/explorer")
+        print("  2. Select YOUR Meta app (not Instagram Messaging only)")
+        print("  3. Permissions: instagram_basic, instagram_content_publish,")
+        print("     pages_show_list, pages_read_engagement")
+        print("  4. Generate Access Token → copy token starting with EAA...")
+        print("\nDo NOT use 'Generate token' on Instagram API → Messaging setup screen.")
+        sys.exit(1)
+
+    result = MetaScheduler.discover_accounts(token)
+    if not result["ok"]:
+        print(f"❌ {result['error']}")
+        sys.exit(1)
+
+    user = result["user"]
+    pages = result["pages"]
+    print(f"✅ Token valid for Facebook user: {user.get('name')} ({user.get('id')})")
+    if not pages:
+        print("\n❌ No Facebook Pages found.")
+        print("Create a Page at facebook.com/pages/create and link it to Instagram.")
+        sys.exit(1)
+
+    print("\nCopy these into .env and GitHub Secrets:\n")
+    for page in pages:
+        ig = (page.get("instagram_business_account") or {})
+        print(f"Page: {page.get('name')} (META_PAGE_ID={page.get('id')})")
+        if ig:
+            print(f"  Instagram: @{ig.get('username', '?')} (META_IG_USER_ID={ig.get('id')})")
+            page_token = page.get("access_token", "")
+            if page_token:
+                print(f"  Use this as META_ACCESS_TOKEN (Page token, best for posting):")
+                print(f"  {page_token[:20]}...{page_token[-8:]}")
+        else:
+            print("  ⚠ No Instagram linked — link IG Business account to this Page in Instagram app")
+        print()
 
 
 def main() -> None:
@@ -191,6 +241,10 @@ def main() -> None:
 
     sub.add_parser("retry", help="Re-run pipeline").set_defaults(func=cmd_retry)
     sub.add_parser("meta-test", help="Verify Meta/Instagram API connection").set_defaults(func=cmd_meta_test)
+    sub.add_parser(
+        "meta-setup",
+        help="Discover META_PAGE_ID and META_IG_USER_ID from Graph API token",
+    ).set_defaults(func=cmd_meta_setup)
 
     add_parser = sub.add_parser("add-novel", help="Manually add a novel")
     add_parser.add_argument("--title", required=True)

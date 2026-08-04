@@ -176,6 +176,28 @@ class MetaScheduler:
         publish_at: datetime | None = None,
     ) -> str:
         del publish_at
+        last_error: Exception | None = None
+        for attempt, use_cover in enumerate((bool(cover_url), False), start=1):
+            try:
+                return self._create_reel_container_once(
+                    video_path, caption, cover_url if use_cover else None
+                )
+            except (requests.RequestException, RuntimeError) as exc:
+                last_error = exc
+                if attempt == 1 and cover_url:
+                    self.logger.warn("meta", f"reel upload with cover failed ({exc}) — retrying without cover")
+                    continue
+                raise
+        if last_error:
+            raise last_error
+        raise RuntimeError("reel container creation failed")
+
+    def _create_reel_container_once(
+        self,
+        video_path: Path,
+        caption: str,
+        cover_url: str | None,
+    ) -> str:
         params: dict[str, str] = {
             "access_token": self.access_token,
             "media_type": "REELS",
@@ -185,7 +207,6 @@ class MetaScheduler:
         }
         if cover_url:
             params["cover_url"] = cover_url
-        # Do not pass publish_at here — Instagram rejects it on /media container create.
 
         resp = requests.post(
             f"{self.GRAPH_URL}/{self.ig_user_id}/media",
@@ -195,12 +216,115 @@ class MetaScheduler:
         if resp.status_code >= 400:
             self._log_api_error("reel container", resp)
         resp.raise_for_status()
-        data = resp.json()
-        container_id = data["id"]
+        container_id = resp.json()["id"]
         self.logger.info(f"Reel container created: {container_id}")
 
-        self._resumable_upload(container_id, video_path)
+        self._upload_video_to_container(container_id, video_path)
         return container_id
+
+    def _upload_video_to_container(self, container_id: str, file_path: Path) -> None:
+        if self.page_id:
+            try:
+                video_url = self._host_video_on_page(file_path)
+                self._resumable_upload_from_url(container_id, video_url)
+                return
+            except (requests.RequestException, RuntimeError, TimeoutError) as exc:
+                self.logger.warn(
+                    "meta",
+                    f"page-hosted video URL upload failed ({exc}) — falling back to binary rupload",
+                )
+        self._resumable_upload_binary(container_id, file_path)
+
+    def _host_video_on_page(self, video_path: Path) -> str:
+        """Upload MP4 to Facebook Page (unpublished) and return a Meta-hosted source URL."""
+        if not self.page_id:
+            raise RuntimeError("META_PAGE_ID required for page-hosted video upload")
+
+        with open(video_path, "rb") as handle:
+            resp = requests.post(
+                f"{self.GRAPH_URL}/{self.page_id}/videos",
+                data={"access_token": self.access_token, "published": "false"},
+                files={"source": (video_path.name, handle, "video/mp4")},
+                timeout=600,
+            )
+        if resp.status_code >= 400:
+            self._log_api_error("page video upload", resp)
+        resp.raise_for_status()
+        video_id = resp.json().get("id")
+        if not video_id:
+            raise RuntimeError("page video upload returned no video id")
+
+        for _ in range(self.POLL_MAX_ATTEMPTS):
+            info = requests.get(
+                f"{self.GRAPH_URL}/{video_id}",
+                params={
+                    "access_token": self.access_token,
+                    "fields": "status,source",
+                },
+                timeout=30,
+            )
+            info.raise_for_status()
+            body = info.json()
+            status = body.get("status") or {}
+            if status.get("video_status") == "ready" and body.get("source"):
+                self.logger.info(f"meta | page video ready: {video_id}")
+                return body["source"]
+            if status.get("video_status") == "error":
+                raise RuntimeError(f"page video processing failed: {status}")
+            time.sleep(self.POLL_INTERVAL_SEC)
+
+        raise TimeoutError(f"page video {video_id} not ready for source URL")
+
+    def _resumable_upload_from_url(self, container_id: str, file_url: str) -> None:
+        headers = {
+            "Authorization": f"OAuth {self.access_token}",
+            "file_url": file_url,
+        }
+        resp = requests.post(
+            f"{self.RUPLOAD_URL}/{container_id}",
+            headers=headers,
+            timeout=600,
+        )
+        if resp.status_code >= 400:
+            self._log_api_error("rupload file_url", resp)
+            raise RuntimeError(f"rupload file_url failed ({resp.status_code}): {resp.text[:500]}")
+        self.logger.info(f"rupload file_url ok for container {container_id}")
+
+    def _resumable_upload_binary(self, container_id: str, file_path: Path) -> None:
+        file_size = file_path.stat().st_size
+        if file_size == 0:
+            raise RuntimeError(f"Video file is empty: {file_path}")
+        if file_size > 100 * 1024 * 1024:
+            raise RuntimeError(
+                f"Video too large for Instagram upload ({file_size / (1024 * 1024):.1f} MiB)"
+            )
+
+        chunk_size = 4 * 1024 * 1024
+        offset = 0
+        with open(file_path, "rb") as handle:
+            while offset < file_size:
+                chunk = handle.read(min(chunk_size, file_size - offset))
+                if not chunk:
+                    break
+                headers = {
+                    "Authorization": f"OAuth {self.access_token}",
+                    "offset": str(offset),
+                    "file_size": str(file_size),
+                }
+                resp = requests.post(
+                    f"{self.RUPLOAD_URL}/{container_id}",
+                    headers=headers,
+                    data=chunk,
+                    timeout=600,
+                )
+                if resp.status_code >= 400:
+                    self._log_api_error("rupload binary", resp)
+                    raise RuntimeError(
+                        f"rupload failed at offset {offset} ({resp.status_code}): {resp.text[:500]}"
+                    )
+                offset += len(chunk)
+
+        self.logger.info(f"Uploaded {file_path.name} ({file_size} bytes) via binary rupload")
 
     def _prepare_reel_for_instagram(self, video_path: Path) -> Path:
         """Re-encode to H.264/AAC + faststart and enforce Instagram's 90s reel cap."""
@@ -216,7 +340,8 @@ class MetaScheduler:
             "-i", str(video_path),
             "-t", str(max_sec),
             "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-            "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.0",
+            "-profile:v", "main", "-level", "4.0", "-pix_fmt", "yuv420p",
+            "-r", "30", "-vsync", "cfr", "-maxrate", "2500k", "-bufsize", "5000k",
             "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
             "-movflags", "+faststart",
             str(out),
@@ -231,33 +356,8 @@ class MetaScheduler:
         return out
 
     def _resumable_upload(self, container_id: str, file_path: Path) -> None:
-        file_size = file_path.stat().st_size
-        if file_size == 0:
-            raise RuntimeError(f"Video file is empty: {file_path}")
-        if file_size > 100 * 1024 * 1024:
-            raise RuntimeError(
-                f"Video too large for Instagram upload ({file_size / (1024 * 1024):.1f} MiB, max ~100 MiB)"
-            )
-
-        with open(file_path, "rb") as f:
-            video_data = f.read()
-
-        headers = {
-            "Authorization": f"OAuth {self.access_token}",
-            "offset": "0",
-            "file_size": str(file_size),
-            "Content-Type": "application/octet-stream",
-        }
-        resp = requests.post(
-            f"{self.RUPLOAD_URL}/{container_id}",
-            headers=headers,
-            data=video_data,
-            timeout=600,
-        )
-        if resp.status_code >= 400:
-            self._log_api_error("rupload", resp)
-            raise RuntimeError(f"rupload failed ({resp.status_code}): {resp.text[:500]}")
-        self.logger.info(f"Uploaded {file_path.name} ({file_size} bytes)")
+        """Backward-compatible alias."""
+        self._upload_video_to_container(container_id, file_path)
 
     def _wait_and_publish(
         self, container_id: str, *, publish_at: datetime | None = None

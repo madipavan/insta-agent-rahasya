@@ -51,10 +51,13 @@ def approve_and_post(config: AppConfig, bundle_id: str, logger: PipelineLogger |
     )
 
     if post_id.startswith("manual_package:"):
-        raise RuntimeError(
+        msg = (
             f"Instagram API upload failed — saved for manual upload: {post_id}. "
-            "Check logs for rupload/video errors. Bundle was NOT marked posted."
+            "Bundle stays in pending_publish; upload from output/ready_to_upload/ manually."
         )
+        logger.fail("approve", msg)
+        telegram.send_error(msg)
+        return post_id
 
     bundle = db.get_review_bundle(bundle_id)
     if bundle:

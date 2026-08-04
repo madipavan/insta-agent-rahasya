@@ -11,6 +11,7 @@ from src.agents.llm_factory import get_chat_model
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.utils.json_parse import parse_llm_json
+from src.utils.llm_text import extract_llm_text
 
 WRITER_SYSTEM = """You are a Hindi Suspense Scriptwriter for Rahasya.exe Instagram reels.
 Write ORIGINAL paraphrase only — never quote the book.
@@ -46,7 +47,7 @@ class ScriptCrew:
             SystemMessage(content=WRITER_SYSTEM),
             HumanMessage(content=brief),
         ])
-        draft = parse_llm_json(str(writer_resp.content))
+        draft = parse_llm_json(extract_llm_text(writer_resp))
 
         edit_brief = (
             f"Edit this script JSON. HARD LIMIT: voiceover_script {min_chars}-{max_chars} chars.\n"
@@ -61,4 +62,12 @@ class ScriptCrew:
             SystemMessage(content=EDITOR_SYSTEM),
             HumanMessage(content=edit_brief),
         ])
-        return parse_llm_json(str(editor_resp.content))
+        editor_text = extract_llm_text(editor_resp)
+        if not editor_text:
+            self.logger.warn("script_crew", "editor returned empty response — using writer draft")
+            return draft
+        try:
+            return parse_llm_json(editor_text)
+        except json.JSONDecodeError:
+            self.logger.warn("script_crew", "editor JSON invalid — using writer draft")
+            return draft

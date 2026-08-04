@@ -99,10 +99,17 @@ class GeminiProvider(ScriptProvider):
         self.model = config.llm_model_gemini
 
     def complete(self, prompt: str, max_tokens: int = 8192) -> str:
+        from google.genai import types
+
         response = self.client.models.generate_content(
             model=self.model,
             contents=prompt,
-            config={"max_output_tokens": max_tokens, "temperature": 0.7},
+            config=types.GenerateContentConfig(
+                max_output_tokens=max_tokens,
+                temperature=0.7,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                response_mime_type="application/json",
+            ),
         )
         return response.text or ""
 

@@ -12,6 +12,7 @@ from src.book_queue.models import Novel
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.utils.json_parse import parse_llm_json
+from src.utils.llm_text import extract_llm_text
 
 STRATEGIST_SYSTEM = """You are a Story Arc Strategist for Instagram suspense reels.
 Design binge-worthy episodic arcs with genuine storytelling — not vague summaries.
@@ -65,7 +66,7 @@ class PlannerCrew:
             SystemMessage(content=STRATEGIST_SYSTEM),
             HumanMessage(content=arc_prompt),
         ])
-        arc_data = parse_llm_json(str(arc_resp.content))
+        arc_data = parse_llm_json(extract_llm_text(arc_resp))
 
         refine_prompt = (
             "Review and finalize this master arc JSON. "
@@ -79,7 +80,16 @@ class PlannerCrew:
             SystemMessage(content=BEAT_WRITER_SYSTEM),
             HumanMessage(content=refine_prompt),
         ])
-        final = parse_llm_json(str(beat_resp.content))
+        beat_text = extract_llm_text(beat_resp)
+        if beat_text:
+            try:
+                final = parse_llm_json(beat_text)
+            except json.JSONDecodeError:
+                self.logger.warn("planner_crew", "beat writer JSON invalid — using strategist draft")
+                final = arc_data
+        else:
+            self.logger.warn("planner_crew", "beat writer empty — using strategist draft")
+            final = arc_data
 
         episodes = final.get("episodes", arc_data.get("episodes", []))
         if len(episodes) < episode_count:

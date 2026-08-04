@@ -53,6 +53,10 @@ def get_chat_model(config: AppConfig, temperature: float = 0.7) -> BaseChatModel
             google_api_key=config.gemini_api_key,
             temperature=temperature,
             max_output_tokens=8192,
+            # Gemini 2.5 Flash spends tokens on thinking by default, which can
+            # leave JSON output empty when the editor rewrites a long draft.
+            thinking_budget=0,
+            response_mime_type="application/json",
         )
 
     from langchain_anthropic import ChatAnthropic

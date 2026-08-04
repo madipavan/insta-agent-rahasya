@@ -10,8 +10,8 @@ brand:
   intro_duration_sec: 1.0
   outro_duration_sec: 1.0
 
-llm_provider: groq
-# Alternatives: gemini | openai | anthropic
+llm_provider: gemini
+# CI uses Gemini (reliable); local can set groq in .env override if needed
 llm_model_groq: llama-3.3-70b-versatile
 llm_model_gemini: gemini-2.5-flash
 llm_model_anthropic: claude-sonnet-4-20250514

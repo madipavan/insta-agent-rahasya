@@ -68,31 +68,47 @@ class BookQueue:
         if not novel:
             novel = self.activate_next_novel()
 
-        synced = self.db.sync_episode_progress(novel.id, self.config.path("output_dir"))
-        if synced:
-            self.logger.info(
-                f"queue | synced {synced} completed episode(s) from bundles/output — skipping to next pending"
-            )
+        output_dir = self.config.path("output_dir")
+        self.db.log_episode_state(novel.id, self.logger)
 
-        episode = self.db.get_next_pending_episode(novel.id)
-        if not episode:
-            self.complete_novel(novel)
-            novel = self.activate_next_novel()
-            self.db.sync_episode_progress(novel.id, self.config.path("output_dir"))
+        for _ in range(novel.estimated_episodes + 2):
+            synced = self.db.sync_episode_progress(novel.id, output_dir)
+            if synced:
+                self.logger.info(
+                    f"queue | synced {synced} completed episode(s) from bundles/output"
+                )
+
             episode = self.db.get_next_pending_episode(novel.id)
             if not episode:
-                raise RuntimeError("No pending episodes for active novel")
+                self.complete_novel(novel)
+                novel = self.activate_next_novel()
+                self.db.log_episode_state(novel.id, self.logger)
+                episode = self.db.get_next_pending_episode(novel.id)
+                if not episode:
+                    raise RuntimeError("No pending episodes for active novel")
 
-        self.logger.info(
-            f"queue | generating {novel.title} ep {episode.episode_num}/"
-            f"{novel.estimated_episodes} (completed episodes are never re-run)"
-        )
+            if self.db.episode_output_exists(novel, episode.episode_num, output_dir):
+                marked = self.db.set_episode_status_by_num(
+                    novel.id, episode.episode_num, "generated"
+                )
+                self.db.refresh_novel_current_episode(novel.id)
+                self.logger.info(
+                    f"queue | ep {episode.episode_num} already has reel.mp4 on disk "
+                    f"{'(marked generated)' if marked else '(already generated)'} — skipping"
+                )
+                continue
 
-        return EpisodeContext(
-            novel=novel,
-            episode=episode,
-            total_episodes=novel.estimated_episodes,
-        )
+            self.logger.info(
+                f"queue | generating {novel.title} ep {episode.episode_num}/"
+                f"{novel.estimated_episodes}"
+            )
+            return EpisodeContext(
+                novel=novel,
+                episode=episode,
+                total_episodes=novel.estimated_episodes,
+            )
+
+        raise RuntimeError("Could not find a pending episode to generate")
 
     def complete_novel(self, novel: Novel) -> None:
         self.db.set_novel_status(novel.id, "completed")

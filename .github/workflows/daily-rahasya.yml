@@ -102,6 +102,9 @@ jobs:
         if: env.META_ACCESS_TOKEN != ''
         run: python main.py meta-test || true
 
+      - name: Pipeline status before run
+        run: python main.py status
+
       - name: Generate episode
         run: python main.py run
 

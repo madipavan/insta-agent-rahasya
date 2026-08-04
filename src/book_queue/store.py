@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from src.book_queue.models import Episode, Novel
+from src.book_queue.slug import slugify_novel
 from src.book_queue.pacing import estimate_episode_count
 
 
@@ -335,18 +336,23 @@ class Database:
 
     def sync_episode_progress(self, novel_id: int, output_dir: Path | None = None) -> int:
         """Align episode rows with generated/posted bundles (fixes cache/DB drift)."""
+        novel = self.get_novel(novel_id)
+        if not novel:
+            return 0
+
         done_eps: set[int] = set()
 
         with self._connect() as conn:
-            for status in ("posted", "pending_publish", "approved", "pending_review"):
-                rows = conn.execute(
-                    """
-                    SELECT DISTINCT episode_num FROM review_bundles
-                    WHERE novel_id = ? AND status = ?
-                    """,
-                    (novel_id, status),
-                ).fetchall()
-                done_eps.update(r["episode_num"] for r in rows if r["episode_num"])
+            rows = conn.execute(
+                """
+                SELECT DISTINCT episode_num FROM review_bundles
+                WHERE novel_id = ? AND status IN (
+                    'posted', 'pending_publish', 'approved', 'pending_review'
+                )
+                """,
+                (novel_id,),
+            ).fetchall()
+            done_eps.update(r["episode_num"] for r in rows if r["episode_num"])
 
             rows = conn.execute(
                 """
@@ -357,8 +363,17 @@ class Database:
             ).fetchall()
             done_eps.update(r["episode_num"] for r in rows if r["episode_num"])
 
+            rows = conn.execute(
+                """
+                SELECT DISTINCT episode_num FROM episodes
+                WHERE novel_id = ? AND status = 'generated'
+                """,
+                (novel_id,),
+            ).fetchall()
+            done_eps.update(r["episode_num"] for r in rows if r["episode_num"])
+
         if output_dir is not None:
-            done_eps.update(self._episode_nums_from_posted_output(novel_id, output_dir))
+            done_eps.update(self._episode_nums_from_output_folders(novel, output_dir))
 
         synced = 0
         for ep_num in sorted(done_eps):
@@ -372,25 +387,44 @@ class Database:
                 )
                 synced += cur.rowcount
 
-        if synced:
+        if synced or done_eps:
             self.refresh_novel_current_episode(novel_id)
         return synced
 
-    def _episode_nums_from_posted_output(self, novel_id: int, output_dir: Path) -> set[int]:
+    def episode_output_exists(self, novel: Novel, episode_num: int, output_dir: Path) -> bool:
+        return episode_num in self._episode_nums_from_output_folders(novel, output_dir)
+
+    def log_episode_state(self, novel_id: int, logger) -> None:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT episode_num, status FROM episodes
+                WHERE novel_id = ? ORDER BY episode_num
+                """,
+                (novel_id,),
+            ).fetchall()
+        if not rows:
+            logger.info("queue | no episodes in DB for active novel")
+            return
+        summary = ", ".join(f"ep{r['episode_num']}:{r['status']}" for r in rows[:8])
+        if len(rows) > 8:
+            summary += f", ... (+{len(rows) - 8} more)"
+        logger.info(f"queue | episode DB state — {summary}")
+
+    def _episode_nums_from_output_folders(self, novel: Novel, output_dir: Path) -> set[int]:
         import re
 
-        novel = self.get_novel(novel_id)
-        if not novel:
-            return set()
-
-        slug = re.sub(r"[^a-zA-Z0-9]+", "_", novel.title.lower()).strip("_")[:40] or "novel"
+        slug = slugify_novel(novel.title)
         nums: set[int] = set()
-        for sub in ("posted", "approved", "review"):
+        for sub in ("posted", "approved", "review", "ready_to_upload", "work"):
             folder = output_dir / sub
             if not folder.exists():
                 continue
             for child in folder.iterdir():
-                if not child.is_dir() or slug not in child.name.lower():
+                if not child.is_dir():
+                    continue
+                name = child.name.lower()
+                if slug not in name:
                     continue
                 match = re.search(r"_ep(\d+)$", child.name, re.IGNORECASE)
                 if match and (child / "reel.mp4").exists():

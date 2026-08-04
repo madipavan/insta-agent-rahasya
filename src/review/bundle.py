@@ -10,7 +10,7 @@ from typing import Any
 
 from src.script_gen.export import write_script_txt, write_transcript_txt
 from src.script_gen.post_details import build_post_details, write_post_details_json, write_post_details_txt
-from src.book_queue.models import EpisodeContext, ScriptOutput
+from src.book_queue.slug import slugify_novel
 from src.book_queue.store import Database
 from src.config import AppConfig
 
@@ -142,6 +142,4 @@ class ReviewBundleWriter:
             shutil.copy2(src, dst)
 
     def _slugify(self, text: str) -> str:
-        import re
-        slug = re.sub(r"[^a-zA-Z0-9]+", "_", text.lower()).strip("_")
-        return slug[:40] or "novel"
+        return slugify_novel(text)

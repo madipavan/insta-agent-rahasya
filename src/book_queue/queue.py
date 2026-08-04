@@ -17,8 +17,20 @@ class BookQueue:
         self.config = config
         self.logger = logger
         self.db = Database(config.path("db_path"))
-        self.planner = EpisodePlanner(config, logger)
-        self.discovery = NovelDiscovery(config, self.db, logger)
+        self._planner: EpisodePlanner | None = None
+        self._discovery: NovelDiscovery | None = None
+
+    @property
+    def planner(self) -> EpisodePlanner:
+        if self._planner is None:
+            self._planner = EpisodePlanner(self.config, self.logger)
+        return self._planner
+
+    @property
+    def discovery(self) -> NovelDiscovery:
+        if self._discovery is None:
+            self._discovery = NovelDiscovery(self.config, self.db, self.logger)
+        return self._discovery
 
     def ensure_queue(self) -> None:
         seed_path = self.config.path("novels_seed")

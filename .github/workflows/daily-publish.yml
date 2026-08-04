@@ -23,10 +23,16 @@ jobs:
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
       META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
+      META_APP_ID: ${{ secrets.META_APP_ID }}
+      META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
       - name: Checkout
@@ -72,6 +78,13 @@ jobs:
       - name: Write CI environment
         run: bash scripts/gha_setup.sh env
 
+      - name: Check Meta secrets
+        run: |
+          if [ -z "$META_ACCESS_TOKEN" ] || [ -z "$META_IG_USER_ID" ]; then
+            echo "::error::META_ACCESS_TOKEN and META_IG_USER_ID are required for publishing"
+            exit 1
+          fi
+
       - name: Verify Meta token
         if: env.META_ACCESS_TOKEN != ''
         run: python main.py meta-test || true
@@ -82,6 +95,10 @@ jobs:
             OUT=$(python main.py publish --now 2>&1) || true
             echo "$OUT"
             if echo "$OUT" | grep -q "Nothing to publish"; then
+              if [ -z "$GEMINI_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
+                echo "::error::No bundle to publish and no LLM key for generate fallback (set GEMINI_API_KEY or GROQ_API_KEY)"
+                exit 1
+              fi
               echo "No bundle in queue — generating episode and publishing now..."
               python main.py run --publish-now
             fi

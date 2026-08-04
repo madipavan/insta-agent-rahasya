@@ -8,18 +8,11 @@ from src.book_queue.queue import BookQueue
 from src.book_queue.store import Database
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
-from src.novel_assets import NovelAssetManager
 from src.review.bundle import ReviewBundleWriter
 from src.script_gen.export import write_script_txt, write_transcript_txt
 from src.script_gen.post_details import build_post_details, write_post_details_json, write_post_details_txt
 from src.review.telegram import TelegramNotifier
 from src.scheduler.factory import get_scheduler
-from src.hashtags.fetcher import HashtagFetcher
-from src.script_gen.generator import ScriptGenerator
-from src.static_post.generator import StaticPostGenerator
-from src.voiceover.provider import get_voiceover_provider
-from src.visuals.assembler import ReelAssembler
-from src.visuals.stock import StockResolver
 
 
 class Pipeline:
@@ -28,16 +21,74 @@ class Pipeline:
         self.logger = PipelineLogger(config.path("logs_dir"))
         self.db = Database(config.path("db_path"))
         self.queue = BookQueue(config, self.logger)
-        self.script_gen = ScriptGenerator(config, self.logger, self.db)
-        self.voiceover = get_voiceover_provider(config, self.logger)
-        self.stock = StockResolver(config, self.logger)
-        self.reel = ReelAssembler(config, self.logger)
-        self.static_post = StaticPostGenerator(config, self.logger)
-        self.novel_assets = NovelAssetManager(config, self.logger, self.db, stock=self.stock)
         self.review = ReviewBundleWriter(config, self.db)
         self.telegram = TelegramNotifier(config, self.logger)
         self.scheduler = get_scheduler(config, self.logger)
-        self.hashtags = HashtagFetcher(config, self.logger)
+        self._script_gen = None
+        self._voiceover = None
+        self._stock = None
+        self._reel = None
+        self._static_post = None
+        self._novel_assets = None
+        self._hashtags = None
+
+    @property
+    def script_gen(self):
+        if self._script_gen is None:
+            from src.script_gen.generator import ScriptGenerator
+
+            self._script_gen = ScriptGenerator(self.config, self.logger, self.db)
+        return self._script_gen
+
+    @property
+    def voiceover(self):
+        if self._voiceover is None:
+            from src.voiceover.provider import get_voiceover_provider
+
+            self._voiceover = get_voiceover_provider(self.config, self.logger)
+        return self._voiceover
+
+    @property
+    def stock(self):
+        if self._stock is None:
+            from src.visuals.stock import StockResolver
+
+            self._stock = StockResolver(self.config, self.logger)
+        return self._stock
+
+    @property
+    def reel(self):
+        if self._reel is None:
+            from src.visuals.assembler import ReelAssembler
+
+            self._reel = ReelAssembler(self.config, self.logger)
+        return self._reel
+
+    @property
+    def static_post(self):
+        if self._static_post is None:
+            from src.static_post.generator import StaticPostGenerator
+
+            self._static_post = StaticPostGenerator(self.config, self.logger)
+        return self._static_post
+
+    @property
+    def novel_assets(self):
+        if self._novel_assets is None:
+            from src.novel_assets import NovelAssetManager
+
+            self._novel_assets = NovelAssetManager(
+                self.config, self.logger, self.db, stock=self.stock
+            )
+        return self._novel_assets
+
+    @property
+    def hashtags(self):
+        if self._hashtags is None:
+            from src.hashtags.fetcher import HashtagFetcher
+
+            self._hashtags = HashtagFetcher(self.config, self.logger)
+        return self._hashtags
 
     def run(self) -> str:
         self.logger.start("pipeline", "daily run")

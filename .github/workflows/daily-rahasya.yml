@@ -14,15 +14,22 @@ on:
         description: "Generate only — do not publish"
         type: boolean
         default: false
+      skip_episodes:
+        description: "Comma-separated episode numbers to mark done before run (e.g. 1 or 1,2)"
+        type: string
+        default: ""
 
 concurrency:
   group: rahasya-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   daily:
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read
 
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -64,9 +71,16 @@ jobs:
           path: |
             data
             output
-          key: rahasya-state-${{ github.ref }}
+          key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
           restore-keys: |
             rahasya-state-${{ github.ref }}-
+
+      - name: Report cache status
+        run: |
+          echo "cache-hit=${{ steps.state_cache.outputs.cache-hit }}"
+          ls -la data/ 2>/dev/null || echo "no data/ yet"
+          ls -la data/rahasya.db 2>/dev/null || echo "no rahasya.db yet"
+          ls -la data/checkpoint.json 2>/dev/null || echo "no checkpoint.json yet"
 
       - name: Cache pip
         uses: actions/cache@v4
@@ -98,15 +112,50 @@ jobs:
       - name: Write CI environment
         run: bash scripts/gha_setup.sh env
 
+      - name: Restore database from previous artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/restore_pipeline_db.sh
+
       - name: Verify Meta token
         if: env.META_ACCESS_TOKEN != ''
         run: python main.py meta-test || true
+
+      - name: Skip completed episodes (manual override)
+        if: inputs.skip_episodes != ''
+        run: |
+          IFS=',' read -ra EPS <<< "${{ inputs.skip_episodes }}"
+          for ep in "${EPS[@]}"; do
+            ep="$(echo "$ep" | xargs)"
+            [ -z "$ep" ] && continue
+            python main.py skip-episode --episode "$ep"
+          done
 
       - name: Pipeline status before run
         run: python main.py status
 
       - name: Generate episode
         run: python main.py run
+
+      - name: Upload pipeline database
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-db
+          path: |
+            data/rahasya.db
+            data/checkpoint.json
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Save pipeline state (post-generate)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            output
+          key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
 
       - name: Wait until 7:30 PM IST
         if: |
@@ -130,14 +179,14 @@ jobs:
           fi
           python main.py publish --now
 
-      - name: Save pipeline state
+      - name: Save pipeline state (final)
         if: always()
         uses: actions/cache/save@v4
         with:
           path: |
             data
             output
-          key: rahasya-state-${{ github.ref }}
+          key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
 
       - name: Upload latest output
         if: always()

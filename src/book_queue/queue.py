@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from src.book_queue.checkpoint import apply_checkpoint_to_db, save_checkpoint
 from src.book_queue.discovery import NovelDiscovery
 from src.book_queue.models import EpisodeContext, Novel
 from src.book_queue.store import Database
@@ -69,6 +70,12 @@ class BookQueue:
             novel = self.activate_next_novel()
 
         output_dir = self.config.path("output_dir")
+        data_dir = self.config.path("data_dir")
+
+        restored = apply_checkpoint_to_db(self.db, data_dir, novel.id, novel.title)
+        if restored:
+            self.logger.info(f"queue | restored {restored} episode(s) from checkpoint.json")
+
         self.db.log_episode_state(novel.id, self.logger)
 
         for _ in range(novel.estimated_episodes + 2):
@@ -162,9 +169,38 @@ class BookQueue:
     def mark_episode_generated(self, context: EpisodeContext) -> None:
         self.db.set_episode_status(context.episode.id, "generated")
         self.db.increment_episode(context.novel.id)
+        save_checkpoint(
+            self.config.path("data_dir"),
+            novel_id=context.novel.id,
+            novel_title=context.novel.title,
+            episode_num=context.episode.episode_num,
+        )
 
         if context.episode.episode_num >= context.total_episodes:
             self.complete_novel(context.novel)
+
+    def skip_episode(self, episode_num: int | None = None) -> EpisodeContext:
+        """Manually mark episode(s) done and advance (e.g. after manual Instagram upload)."""
+        novel = self.db.get_active_novel()
+        if not novel:
+            raise RuntimeError("No active novel")
+
+        if episode_num is None:
+            pending = self.db.get_next_pending_episode(novel.id)
+            if not pending:
+                raise RuntimeError("No pending episode to skip")
+            episode_num = pending.episode_num
+
+        self.db.set_episode_status_by_num(novel.id, episode_num, "generated")
+        self.db.refresh_novel_current_episode(novel.id)
+        save_checkpoint(
+            self.config.path("data_dir"),
+            novel_id=novel.id,
+            novel_title=novel.title,
+            episode_num=episode_num,
+        )
+        self.logger.info(f"queue | manually marked ep {episode_num} as generated for {novel.title}")
+        return self.get_today_context()
 
     def status_summary(self) -> dict:
         active = self.db.get_active_novel()

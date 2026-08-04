@@ -116,6 +116,19 @@ def cmd_next_novel(args: argparse.Namespace) -> None:
     print("Run: python main.py run  (to generate episode 1)")
 
 
+def cmd_skip_episode(args: argparse.Namespace) -> None:
+    """Mark current pending episode as done (use after manual upload or cache loss)."""
+    config = load_config()
+    logger = PipelineLogger(config.path("logs_dir"))
+    queue = BookQueue(config, logger)
+    ep = getattr(args, "episode", None)
+    ctx = queue.skip_episode(episode_num=ep)
+    print(
+        f"Skipped to next: {ctx.novel.title} ep {ctx.episode.episode_num}/"
+        f"{ctx.total_episodes}"
+    )
+
+
 def cmd_approve(args: argparse.Namespace) -> None:
     pipeline = Pipeline(load_config())
     pipeline.approve_and_post(args.bundle_id)
@@ -434,6 +447,18 @@ def main() -> None:
         help="Keep output folders for the skipped novel",
     )
     next_parser.set_defaults(func=cmd_next_novel)
+
+    skip_ep = sub.add_parser(
+        "skip-episode",
+        help="Mark current pending episode done and advance (after manual upload)",
+    )
+    skip_ep.add_argument(
+        "--episode",
+        type=int,
+        default=None,
+        help="Episode number to skip (default: lowest pending)",
+    )
+    skip_ep.set_defaults(func=cmd_skip_episode)
 
     approve_parser = sub.add_parser("approve", help="Approve a review bundle")
     approve_parser.add_argument("bundle_id")

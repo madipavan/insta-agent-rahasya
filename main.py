@@ -36,9 +36,17 @@ def cmd_publish(args: argparse.Namespace) -> None:
             print("Nothing to publish yet (waiting for min_publish_delay_hours).")
 
 
-def cmd_run(_: argparse.Namespace) -> None:
-    pipeline = Pipeline(load_config())
+def cmd_run(args: argparse.Namespace) -> None:
+    config = load_config()
+    pipeline = Pipeline(config)
     bundle_id = pipeline.run()
+    if getattr(args, "publish_now", False):
+        config.min_publish_delay_hours = 0
+        published = pipeline.publish_pending()
+        if published:
+            print(f"Published: {published}")
+        else:
+            print("Generated but nothing to publish (bundle may already be posted).")
     print(f"Pipeline complete. Bundle: {bundle_id}")
 
 
@@ -227,6 +235,64 @@ def cmd_meta_test(_: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def cmd_meta_long_token(_: argparse.Namespace) -> None:
+    """Get a Page token that does not expire (for .env + GitHub Secrets)."""
+    import os
+
+    from dotenv import load_dotenv
+
+    from src.scheduler.meta import MetaScheduler
+
+    load_dotenv()
+    short_token = os.getenv("META_ACCESS_TOKEN", "").strip()
+    app_id = os.getenv("META_APP_ID", "").strip()
+    app_secret = os.getenv("META_APP_SECRET", "").strip()
+    page_id = os.getenv("META_PAGE_ID", "").strip()
+
+    if not short_token:
+        print("Add a fresh SHORT-LIVED user token to META_ACCESS_TOKEN in .env first.")
+        print("Get it from Graph API Explorer (expires in ~1 hour):")
+        print("  https://developers.facebook.com/tools/explorer")
+        sys.exit(1)
+
+    if not app_id or not app_secret:
+        print("META_APP_ID and META_APP_SECRET are required in .env")
+        print("\nFind them: Meta Developers → Your App → App settings → Basic")
+        print("  META_APP_ID=your_app_id")
+        print("  META_APP_SECRET=your_app_secret")
+        sys.exit(1)
+
+    creds = MetaScheduler.validate_app_credentials(app_id, app_secret)
+    if not creds["ok"]:
+        print(f"❌ {creds['error']}")
+        sys.exit(1)
+
+    print("✅ App ID + App Secret verified")
+    print("Exchanging short user token → long-lived user → permanent Page token...\n")
+    result = MetaScheduler.obtain_permanent_page_token(
+        short_token, app_id, app_secret, page_id=page_id
+    )
+    if not result["ok"]:
+        print(f"❌ {result['error']}")
+        sys.exit(1)
+
+    token_info = result.get("token_info") or {}
+    expires = token_info.get("expires_label", "?")
+
+    print("✅ Permanent Page token ready\n")
+    print(f"  Page: {result.get('page_name')} (META_PAGE_ID={result.get('page_id')})")
+    if result.get("ig_user_id"):
+        print(
+            f"  Instagram: @{result.get('ig_username', '?')} "
+            f"(META_IG_USER_ID={result.get('ig_user_id')})"
+        )
+    print(f"  Token expiry: {expires}")
+    print("\nReplace META_ACCESS_TOKEN in .env AND GitHub Secret with this PAGE token:")
+    print(result["page_token"])
+    print("\nThis Page token should not expire unless you revoke the app or change password.")
+    print("Then run: python main.py meta-test")
+
+
 def cmd_meta_setup(_: argparse.Namespace) -> None:
     """Discover Page ID + Instagram ID from a Graph API user token."""
     import os
@@ -313,7 +379,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Rahasya.exe content pipeline")
     sub = parser.add_subparsers(dest="command")
 
-    sub.add_parser("run", help="Generate today's content").set_defaults(func=cmd_run)
+    run_parser = sub.add_parser("run", help="Generate today's content")
+    run_parser.add_argument(
+        "--publish-now",
+        action="store_true",
+        help="Publish immediately after generate (skip min_publish_delay_hours)",
+    )
+    run_parser.set_defaults(func=cmd_run)
     publish_parser = sub.add_parser(
         "publish",
         help="Post oldest queued bundle to Instagram (scheduled publish step)",
@@ -335,6 +407,10 @@ def main() -> None:
 
     sub.add_parser("retry", help="Re-run pipeline").set_defaults(func=cmd_retry)
     sub.add_parser("meta-test", help="Verify Meta/Instagram API connection").set_defaults(func=cmd_meta_test)
+    sub.add_parser(
+        "meta-long-token",
+        help="Get a Page token that does not expire (needs APP_ID + APP_SECRET)",
+    ).set_defaults(func=cmd_meta_long_token)
     sub.add_parser(
         "meta-setup",
         help="Discover META_PAGE_ID and META_IG_USER_ID from Graph API token",

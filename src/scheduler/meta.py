@@ -472,12 +472,155 @@ class MetaScheduler:
             return {"ok": False, "error": err.get("message", resp.text)}
 
         data = resp.json().get("data", {})
+        expires_at = data.get("expires_at")
+        expires_label = "never (Page token)" if expires_at == 0 else str(expires_at)
         return {
             "ok": True,
             "type": data.get("type", "?"),
             "app_id": data.get("app_id"),
             "is_valid": data.get("is_valid"),
             "scopes": data.get("scopes", []) or [],
+            "expires_at": expires_at,
+            "expires_label": expires_label,
+        }
+
+    @staticmethod
+    def validate_app_credentials(app_id: str, app_secret: str) -> dict:
+        """Verify META_APP_ID + META_APP_SECRET pair (client credentials grant)."""
+        app_id = (app_id or "").strip()
+        app_secret = (app_secret or "").strip()
+        if not app_id or not app_secret:
+            return {"ok": False, "error": "META_APP_ID and META_APP_SECRET required"}
+
+        resp = requests.get(
+            "https://graph.facebook.com/v21.0/oauth/access_token",
+            params={
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "grant_type": "client_credentials",
+            },
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            err = resp.json().get("error", {})
+            msg = err.get("message", resp.text)
+            if "client secret" in msg.lower():
+                return {
+                    "ok": False,
+                    "error": (
+                        "META_APP_SECRET is wrong for META_APP_ID. "
+                        "Copy a fresh App Secret from Meta Developers → Your App → "
+                        "App settings → Basic (Show → copy). "
+                        "Use the SAME app in Graph API Explorer."
+                    ),
+                }
+            return {"ok": False, "error": msg}
+        return {"ok": True, "app_access_token": resp.json().get("access_token", "")}
+
+    @staticmethod
+    def exchange_long_lived_user_token(
+        short_token: str, app_id: str, app_secret: str
+    ) -> dict:
+        """Exchange short-lived user token for long-lived user token (~60 days)."""
+        short_token = (short_token or "").strip()
+        app_id = (app_id or "").strip()
+        app_secret = (app_secret or "").strip()
+        if not short_token:
+            return {"ok": False, "error": "No user token"}
+        if not app_id or not app_secret:
+            return {
+                "ok": False,
+                "error": "META_APP_ID and META_APP_SECRET required in .env for long-lived exchange",
+            }
+
+        resp = requests.get(
+            "https://graph.facebook.com/v21.0/oauth/access_token",
+            params={
+                "grant_type": "fb_exchange_token",
+                "client_id": app_id,
+                "client_secret": app_secret,
+                "fb_exchange_token": short_token,
+            },
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            err = resp.json().get("error", {})
+            return {"ok": False, "error": err.get("message", resp.text)}
+
+        body = resp.json()
+        token = body.get("access_token", "")
+        if not token:
+            return {"ok": False, "error": "No access_token in exchange response"}
+        return {
+            "ok": True,
+            "access_token": token,
+            "expires_in": body.get("expires_in"),
+        }
+
+    @staticmethod
+    def obtain_permanent_page_token(
+        short_user_token: str,
+        app_id: str,
+        app_secret: str,
+        page_id: str = "",
+    ) -> dict:
+        """
+        Get a Page access token that does not expire (Meta's standard automation path).
+
+        1. Short user token → long-lived user token (needs app id + secret)
+        2. Long-lived user → Page access token (never expires unless revoked)
+        """
+        exchange = MetaScheduler.exchange_long_lived_user_token(
+            short_user_token, app_id, app_secret
+        )
+        if not exchange["ok"]:
+            return exchange
+
+        long_token = exchange["access_token"]
+        pages_result = MetaScheduler.discover_accounts(long_token)
+        if not pages_result["ok"]:
+            return pages_result
+
+        pages = pages_result.get("pages") or []
+        target_page_id = (page_id or "").strip()
+
+        chosen: dict | None = None
+        if target_page_id:
+            for p in pages:
+                if p.get("id") == target_page_id:
+                    chosen = p
+                    break
+            if not chosen:
+                page_result = MetaScheduler.fetch_page_token(long_token, target_page_id)
+                if page_result["ok"]:
+                    chosen = {
+                        "id": page_result["page"].get("id"),
+                        "name": page_result["page"].get("name"),
+                        "access_token": page_result["page_token"],
+                        "instagram_business_account": None,
+                    }
+        elif pages:
+            chosen = pages[0]
+
+        if not chosen or not chosen.get("access_token"):
+            return {
+                "ok": False,
+                "error": "Could not obtain Page token. Check META_PAGE_ID and Page Admin access.",
+            }
+
+        page_token = chosen["access_token"]
+        token_info = MetaScheduler.inspect_token(page_token, app_id, app_secret)
+        ig = chosen.get("instagram_business_account") or {}
+
+        return {
+            "ok": True,
+            "page_id": chosen.get("id"),
+            "page_name": chosen.get("name"),
+            "page_token": page_token,
+            "ig_user_id": ig.get("id"),
+            "ig_username": ig.get("username"),
+            "token_info": token_info,
+            "long_lived_user_expires_in": exchange.get("expires_in"),
         }
 
     @staticmethod

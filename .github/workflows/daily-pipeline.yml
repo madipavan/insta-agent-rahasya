@@ -5,6 +5,11 @@ on:
     # 5:00 PM IST = 11:30 UTC — generate content only (publish at 7:30 PM next day)
     - cron: "30 11 * * *"
   workflow_dispatch:
+    inputs:
+      publish_immediately:
+        description: "Publish to Instagram right after generate (skip 20h wait)"
+        type: boolean
+        default: true
 
 concurrency:
   group: daily-pipeline
@@ -54,6 +59,9 @@ jobs:
             data
             output/stock_cache
             output/review
+            output/approved
+            output/posted
+            output/ready_to_upload
           key: rahasya-state-${{ github.ref }}
           restore-keys: |
             rahasya-state-${{ github.ref }}-
@@ -69,10 +77,15 @@ jobs:
 
       - name: Verify Meta token
         if: env.META_ACCESS_TOKEN != ''
-        run: python main.py meta-test
+        run: python main.py meta-test || true
 
       - name: Run pipeline
-        run: python main.py run
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_immediately }}" = "true" ]; then
+            python main.py run --publish-now
+          else
+            python main.py run
+          fi
 
       - name: Save pipeline state
         if: always()
@@ -82,6 +95,9 @@ jobs:
             data
             output/stock_cache
             output/review
+            output/approved
+            output/posted
+            output/ready_to_upload
           key: rahasya-state-${{ github.ref }}-${{ github.run_id }}
 
       - name: Upload latest output

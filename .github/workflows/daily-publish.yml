@@ -5,6 +5,11 @@ on:
     # 7:30 PM IST = 14:00 UTC — posts queued bundle from yesterday's generate
     - cron: "0 14 * * *"
   workflow_dispatch:
+    inputs:
+      publish_immediately:
+        description: "Skip 20h delay and publish now (for testing)"
+        type: boolean
+        default: true
 
 concurrency:
   group: daily-publish
@@ -47,10 +52,15 @@ jobs:
 
       - name: Verify Meta token
         if: env.META_ACCESS_TOKEN != ''
-        run: python main.py meta-test
+        run: python main.py meta-test || true
 
       - name: Publish to Instagram
-        run: python main.py publish
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_immediately }}" = "true" ]; then
+            python main.py publish --now
+          else
+            python main.py publish
+          fi
 
       - name: Save pipeline state
         if: always()

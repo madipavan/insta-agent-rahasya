@@ -14,6 +14,7 @@ from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.utils.json_parse import parse_llm_json
 from src.utils.llm_text import extract_llm_text
+from src.utils.llm_errors import is_llm_limit_error
 
 WRITER_SYSTEM = """You are a Hindi Suspense Scriptwriter for Rahasya.exe Instagram reels.
 Write ORIGINAL paraphrase only — never quote the book.
@@ -42,8 +43,8 @@ class ScriptCrew:
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
         self.config = config
         self.logger = logger
-        self.writer_llm = get_chat_model(config, temperature=0.8)
-        self.editor_llm = get_chat_model(config, temperature=0.4)
+        self.writer_llm = get_chat_model(config, temperature=0.8, logger=logger)
+        self.editor_llm = get_chat_model(config, temperature=0.4, logger=logger)
 
     def write_script(self, brief: str, min_chars: int, max_chars: int) -> dict[str, Any]:
         self.logger.info("script_crew | writer agent")
@@ -107,11 +108,9 @@ class ScriptCrew:
                     HumanMessage(content=user),
                 ])
             except Exception as exc:
-                err = str(exc).lower()
-                if "rate_limit" in err or "413" in err or "429" in err:
-                    wait = 20 * attempt
-                    self.logger.warn("script_crew", f"{label} rate limited — wait {wait}s")
-                    time.sleep(wait)
+                if is_llm_limit_error(exc):
+                    self.logger.warn("script_crew", f"{label} rate limited — retrying")
+                    time.sleep(10 * attempt)
                     continue
                 raise
             text = extract_llm_text(resp)

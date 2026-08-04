@@ -1,51 +1,65 @@
-name: Daily Publish
+name: Daily Rahasya
 
 on:
   schedule:
-    # 7:30 PM IST = 14:00 UTC — posts queued bundle from yesterday's generate
-    - cron: "0 14 * * *"
+    # 6:00 PM IST = 12:30 UTC — generate, wait until 7:30 PM IST, then publish
+    - cron: "30 12 * * *"
   workflow_dispatch:
     inputs:
-      publish_immediately:
-        description: "Skip 20h delay and publish now (for testing)"
+      skip_wait:
+        description: "Skip wait until 7:30 PM IST (publish right after generate)"
         type: boolean
         default: true
+      generate_only:
+        description: "Generate only — do not publish"
+        type: boolean
+        default: false
 
 concurrency:
   group: rahasya-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
+  daily:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 180
 
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
       META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
       META_APP_ID: ${{ secrets.META_APP_ID }}
       META_APP_SECRET: ${{ secrets.META_APP_SECRET }}
+      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      METRICOOL_API_KEY: ${{ secrets.METRICOOL_API_KEY }}
+      METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Show build info
+      - name: Check required secrets
         run: |
-          echo "Commit: $(git rev-parse HEAD)"
-          echo "GEMINI_API_KEY set: $([ -n \"$GEMINI_API_KEY\" ] && echo yes || echo no)"
-          echo "META_ACCESS_TOKEN set: $([ -n \"$META_ACCESS_TOKEN\" ] && echo yes || echo no)"
+          if [ -z "$GROQ_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$MISTRAL_API_KEY" ]; then
+            echo "::error::Set at least one LLM key: GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY"
+            exit 1
+          fi
+          if [ -z "$PEXELS_API_KEY" ]; then
+            echo "::warning::PEXELS_API_KEY secret is missing — stock footage may fail"
+          fi
 
       - name: Restore pipeline state
         uses: actions/cache/restore@v4
+        id: state_cache
         with:
           path: |
             data
@@ -84,28 +98,53 @@ jobs:
       - name: Write CI environment
         run: bash scripts/gha_setup.sh env
 
-      - name: Check Meta secrets
+      - name: Verify Meta token
+        if: env.META_ACCESS_TOKEN != ''
+        run: python main.py meta-test || true
+
+      - name: Generate episode
+        run: python main.py run
+
+      - name: Wait until 7:30 PM IST
+        if: |
+          inputs.generate_only != true &&
+          (github.event_name == 'schedule' || inputs.skip_wait != true)
+        run: python scripts/wait_until_post_time.py
+
+      - name: Publish to Instagram
+        if: inputs.generate_only != true
         run: |
           if [ -z "$META_ACCESS_TOKEN" ] || [ -z "$META_IG_USER_ID" ]; then
             echo "::error::META_ACCESS_TOKEN and META_IG_USER_ID are required for publishing"
             exit 1
           fi
-
-      - name: Verify Meta token
-        if: env.META_ACCESS_TOKEN != ''
-        run: python main.py meta-test || true
-
-      - name: Publish to Instagram
-        run: |
-          echo "Pending publish bundles in DB:"
+          echo "Pending publish bundles:"
           PENDING=$(python -c "from src.config import load_config; from src.pipeline.publisher import pending_publish_count; print(pending_publish_count(load_config()))")
           echo "$PENDING"
           if [ "$PENDING" = "0" ]; then
-            echo "::error::No bundles in pending_publish queue. Run Daily Pipeline first and wait for it to finish."
+            echo "::error::No bundles in pending_publish queue after generate step"
             exit 1
           fi
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_immediately }}" = "true" ]; then
-            python main.py publish --now
-          else
-            python main.py publish
-          fi
+          python main.py publish --now
+
+      - name: Save pipeline state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data
+            output
+          key: rahasya-state-${{ github.ref }}
+
+      - name: Upload latest output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-episode-${{ github.run_number }}
+          path: |
+            output/posted/**/*
+            output/ready_to_upload/**/*
+            output/work/**/*
+            logs/*.log
+          retention-days: 14
+          if-no-files-found: ignore

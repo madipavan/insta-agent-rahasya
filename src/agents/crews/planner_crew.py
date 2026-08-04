@@ -34,8 +34,8 @@ class PlannerCrew:
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
         self.config = config
         self.logger = logger
-        self.strategist_llm = get_chat_model(config, temperature=0.6)
-        self.beat_llm = get_chat_model(config, temperature=0.5)
+        self.strategist_llm = get_chat_model(config, temperature=0.6, logger=logger)
+        self.beat_llm = get_chat_model(config, temperature=0.5, logger=logger)
 
     def create_master_arc(
         self,

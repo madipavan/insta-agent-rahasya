@@ -8,6 +8,8 @@ from typing import Any
 
 from src.config import AppConfig
 from src.utils.json_parse import parse_llm_json
+from src.utils.llm_errors import is_llm_limit_error
+from src.agents.llm_factory import provider_chain
 
 
 class ScriptProvider(ABC):
@@ -114,13 +116,77 @@ class GeminiProvider(ScriptProvider):
         return response.text or ""
 
 
-def get_provider(config: AppConfig) -> ScriptProvider:
-    provider = config.llm_provider.lower()
+class MistralProvider(ScriptProvider):
+    """Mistral AI API (OpenAI-compatible)."""
+
+    BASE_URL = "https://api.mistral.ai/v1"
+
+    def __init__(self, config: AppConfig) -> None:
+        from openai import OpenAI
+
+        if not config.mistral_api_key:
+            raise ValueError("MISTRAL_API_KEY not set")
+        self.client = OpenAI(api_key=config.mistral_api_key, base_url=self.BASE_URL)
+        self.model = config.llm_model_mistral
+
+    def complete(self, prompt: str, max_tokens: int = 8192) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content or ""
+
+
+def _build_provider(config: AppConfig, provider: str) -> ScriptProvider:
+    provider = provider.lower()
     if provider == "openai":
         return OpenAIProvider(config)
     if provider == "groq":
         return GroqProvider(config)
     if provider == "gemini":
         return GeminiProvider(config)
+    if provider == "mistral":
+        return MistralProvider(config)
     return AnthropicProvider(config)
+
+
+class FallbackScriptProvider(ScriptProvider):
+    """Tries providers in order on quota / rate-limit errors."""
+
+    def __init__(self, config: AppConfig) -> None:
+        self.config = config
+        self._chain = provider_chain(config)
+        self._active_idx = 0
+
+    def complete(self, prompt: str, max_tokens: int = 2048) -> str:
+        if not self._chain:
+            raise ValueError("No LLM API keys configured")
+
+        last_exc: Exception | None = None
+        for idx in range(self._active_idx, len(self._chain)):
+            provider = self._chain[idx]
+            client = _build_provider(self.config, provider)
+            try:
+                text = client.complete(prompt, max_tokens=max_tokens)
+                self._active_idx = idx
+                return text
+            except Exception as exc:
+                last_exc = exc
+                if is_llm_limit_error(exc) and idx < len(self._chain) - 1:
+                    continue
+                raise
+
+        if last_exc:
+            raise last_exc
+        raise RuntimeError("LLM complete failed")
+
+
+def get_provider(config: AppConfig) -> ScriptProvider:
+    chain = provider_chain(config)
+    if len(chain) > 1:
+        return FallbackScriptProvider(config)
+    if not chain:
+        raise ValueError("No LLM API keys configured")
+    return _build_provider(config, chain[0])
 

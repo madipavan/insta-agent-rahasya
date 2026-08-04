@@ -1,15 +1,6 @@
 {
   "novels": [
     {
-      "title": "The Thirty-Nine Steps",
-      "author": "John Buchan",
-      "country": "UK",
-      "chapter_count": 24,
-      "public_domain": true,
-      "source_link": "https://www.gutenberg.org/ebooks/6133",
-      "adaptation_checked": true
-    },
-    {
       "title": "The Mystery of the Yellow Room",
       "author": "Gaston Leroux",
       "country": "France",

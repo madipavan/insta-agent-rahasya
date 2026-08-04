@@ -181,9 +181,15 @@ class BookQueue:
 
     def skip_episode(self, episode_num: int | None = None) -> EpisodeContext:
         """Manually mark episode(s) done and advance (e.g. after manual Instagram upload)."""
+        self.ensure_queue()
         novel = self.db.get_active_novel()
         if not novel:
-            raise RuntimeError("No active novel")
+            novel = self.activate_next_novel()
+
+        data_dir = self.config.path("data_dir")
+        restored = apply_checkpoint_to_db(self.db, data_dir, novel.id, novel.title)
+        if restored:
+            self.logger.info(f"queue | restored {restored} episode(s) from checkpoint.json")
 
         if episode_num is None:
             pending = self.db.get_next_pending_episode(novel.id)
@@ -191,10 +197,17 @@ class BookQueue:
                 raise RuntimeError("No pending episode to skip")
             episode_num = pending.episode_num
 
-        self.db.set_episode_status_by_num(novel.id, episode_num, "generated")
+        ep_row = self.db.get_episode(novel.id, episode_num)
+        if not ep_row:
+            raise RuntimeError(
+                f"Episode {episode_num} not found for {novel.title}. "
+                "Run: python main.py status"
+            )
+
+        self.db.set_episode_status(ep_row.id, "generated")
         self.db.refresh_novel_current_episode(novel.id)
         save_checkpoint(
-            self.config.path("data_dir"),
+            data_dir,
             novel_id=novel.id,
             novel_title=novel.title,
             episode_num=episode_num,

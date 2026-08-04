@@ -7,6 +7,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from src.config import AppConfig
 
 
+def _groq_uses_reasoning(model: str) -> bool:
+    name = model.lower()
+    return "gpt-oss" in name or "qwen" in name or name.startswith("groq/compound")
+
+
 def get_chat_model(config: AppConfig, temperature: float = 0.7) -> BaseChatModel:
     provider = config.llm_provider.lower()
 
@@ -15,11 +20,17 @@ def get_chat_model(config: AppConfig, temperature: float = 0.7) -> BaseChatModel
 
         if not config.groq_api_key:
             raise ValueError("GROQ_API_KEY not set")
-        return ChatGroq(
-            model=config.llm_model_groq,
-            api_key=config.groq_api_key,
-            temperature=temperature,
-        )
+        groq_kwargs: dict = {
+            "model": config.llm_model_groq,
+            "api_key": config.groq_api_key,
+            "temperature": temperature,
+            "max_tokens": 8192,
+        }
+        # Reasoning models (gpt-oss, qwen) otherwise return empty content on long prompts.
+        if _groq_uses_reasoning(config.llm_model_groq):
+            groq_kwargs["reasoning_format"] = "hidden"
+            groq_kwargs["reasoning_effort"] = "low"
+        return ChatGroq(**groq_kwargs)
 
     if provider == "openai":
         from langchain_openai import ChatOpenAI
@@ -30,6 +41,18 @@ def get_chat_model(config: AppConfig, temperature: float = 0.7) -> BaseChatModel
             model=config.llm_model_openai,
             api_key=config.openai_api_key,
             temperature=temperature,
+        )
+
+    if provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        if not config.gemini_api_key:
+            raise ValueError("GEMINI_API_KEY not set")
+        return ChatGoogleGenerativeAI(
+            model=config.llm_model_gemini,
+            google_api_key=config.gemini_api_key,
+            temperature=temperature,
+            max_output_tokens=8192,
         )
 
     from langchain_anthropic import ChatAnthropic

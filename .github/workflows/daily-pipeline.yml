@@ -22,6 +22,7 @@ jobs:
 
     env:
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
@@ -43,8 +44,8 @@ jobs:
 
       - name: Check required secrets
         run: |
-          if [ -z "$GROQ_API_KEY" ]; then
-            echo "::error::GROQ_API_KEY secret is missing. Add it in Settings → Secrets → Actions"
+          if [ -z "$GROQ_API_KEY" ] && [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error::Set GROQ_API_KEY or GEMINI_API_KEY in Settings → Secrets → Actions"
             exit 1
           fi
           if [ -z "$PEXELS_API_KEY" ]; then

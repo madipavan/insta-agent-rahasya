@@ -67,14 +67,33 @@ jobs:
           restore-keys: |
             rahasya-state-${{ github.ref }}-
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py311-${{ hashFiles('requirements.txt', 'requirements-ml.txt') }}
+          restore-keys: |
+            pip-${{ runner.os }}-py311-
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-ml.txt
 
-      - name: Install dependencies
-        run: bash scripts/gha_setup.sh
+      - name: Install system dependencies
+        timeout-minutes: 12
+        run: bash scripts/gha_setup.sh system
+
+      - name: Install Python dependencies
+        timeout-minutes: 20
+        run: bash scripts/gha_setup.sh python
+
+      - name: Write CI environment
+        run: bash scripts/gha_setup.sh env
 
       - name: Verify Meta token
         if: env.META_ACCESS_TOKEN != ''

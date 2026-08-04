@@ -1,0 +1,2 @@
+# Optional ML deps — captions fall back to timing if install fails or is skipped.
+faster-whisper>=1.0.0

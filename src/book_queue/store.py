@@ -304,6 +304,99 @@ class Database:
         with self._connect() as conn:
             conn.execute("UPDATE episodes SET status = ? WHERE id = ?", (status, episode_id))
 
+    def set_episode_status_by_num(self, novel_id: int, episode_num: int, status: str) -> bool:
+        with self._connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE episodes SET status = ?
+                WHERE novel_id = ? AND episode_num = ?
+                """,
+                (status, novel_id, episode_num),
+            )
+            return cur.rowcount > 0
+
+    def refresh_novel_current_episode(self, novel_id: int) -> None:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT MAX(episode_num) AS max_ep FROM episodes
+                WHERE novel_id = ? AND status = 'generated'
+                """,
+                (novel_id,),
+            ).fetchone()
+            if row and row["max_ep"] is not None:
+                conn.execute(
+                    """
+                    UPDATE novels SET current_episode = ?
+                    WHERE id = ? AND current_episode < ?
+                    """,
+                    (row["max_ep"], novel_id, row["max_ep"]),
+                )
+
+    def sync_episode_progress(self, novel_id: int, output_dir: Path | None = None) -> int:
+        """Align episode rows with generated/posted bundles (fixes cache/DB drift)."""
+        done_eps: set[int] = set()
+
+        with self._connect() as conn:
+            for status in ("posted", "pending_publish", "approved", "pending_review"):
+                rows = conn.execute(
+                    """
+                    SELECT DISTINCT episode_num FROM review_bundles
+                    WHERE novel_id = ? AND status = ?
+                    """,
+                    (novel_id, status),
+                ).fetchall()
+                done_eps.update(r["episode_num"] for r in rows if r["episode_num"])
+
+            rows = conn.execute(
+                """
+                SELECT DISTINCT episode_num FROM post_log
+                WHERE novel_id = ? AND status IN ('posted', 'generated')
+                """,
+                (novel_id,),
+            ).fetchall()
+            done_eps.update(r["episode_num"] for r in rows if r["episode_num"])
+
+        if output_dir is not None:
+            done_eps.update(self._episode_nums_from_posted_output(novel_id, output_dir))
+
+        synced = 0
+        for ep_num in sorted(done_eps):
+            with self._connect() as conn:
+                cur = conn.execute(
+                    """
+                    UPDATE episodes SET status = 'generated'
+                    WHERE novel_id = ? AND episode_num = ? AND status = 'pending'
+                    """,
+                    (novel_id, ep_num),
+                )
+                synced += cur.rowcount
+
+        if synced:
+            self.refresh_novel_current_episode(novel_id)
+        return synced
+
+    def _episode_nums_from_posted_output(self, novel_id: int, output_dir: Path) -> set[int]:
+        import re
+
+        novel = self.get_novel(novel_id)
+        if not novel:
+            return set()
+
+        slug = re.sub(r"[^a-zA-Z0-9]+", "_", novel.title.lower()).strip("_")[:40] or "novel"
+        nums: set[int] = set()
+        for sub in ("posted", "approved", "review"):
+            folder = output_dir / sub
+            if not folder.exists():
+                continue
+            for child in folder.iterdir():
+                if not child.is_dir() or slug not in child.name.lower():
+                    continue
+                match = re.search(r"_ep(\d+)$", child.name, re.IGNORECASE)
+                if match and (child / "reel.mp4").exists():
+                    nums.add(int(match.group(1)))
+        return nums
+
     def episode_count_for_novel(self, novel_id: int) -> int:
         with self._connect() as conn:
             row = conn.execute(

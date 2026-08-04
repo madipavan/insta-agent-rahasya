@@ -68,13 +68,25 @@ class BookQueue:
         if not novel:
             novel = self.activate_next_novel()
 
+        synced = self.db.sync_episode_progress(novel.id, self.config.path("output_dir"))
+        if synced:
+            self.logger.info(
+                f"queue | synced {synced} completed episode(s) from bundles/output — skipping to next pending"
+            )
+
         episode = self.db.get_next_pending_episode(novel.id)
         if not episode:
             self.complete_novel(novel)
             novel = self.activate_next_novel()
+            self.db.sync_episode_progress(novel.id, self.config.path("output_dir"))
             episode = self.db.get_next_pending_episode(novel.id)
             if not episode:
                 raise RuntimeError("No pending episodes for active novel")
+
+        self.logger.info(
+            f"queue | generating {novel.title} ep {episode.episode_num}/"
+            f"{novel.estimated_episodes} (completed episodes are never re-run)"
+        )
 
         return EpisodeContext(
             novel=novel,

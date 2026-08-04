@@ -60,6 +60,8 @@ def approve_and_post(config: AppConfig, bundle_id: str, logger: PipelineLogger |
             metricool_id=post_id,
         )
         db.set_review_status(bundle_id, "posted")
+        db.set_episode_status_by_num(bundle["novel_id"], bundle["episode_num"], "generated")
+        db.refresh_novel_current_episode(bundle["novel_id"])
 
     posted_dir = config.path("output_dir") / "posted" / bundle_id
     posted_dir.parent.mkdir(parents=True, exist_ok=True)

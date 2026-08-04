@@ -85,13 +85,15 @@ def build_chat_model(
         )
 
     if provider == "mistral":
-        from langchain_mistralai import ChatMistralAI
+        from langchain_openai import ChatOpenAI
 
         if not config.mistral_api_key:
             raise ValueError("MISTRAL_API_KEY not set")
-        return ChatMistralAI(
+        # OpenAI-compatible API — avoids langchain-mistralai / httpx_sse import bugs on CI.
+        return ChatOpenAI(
             model=config.llm_model_mistral,
             api_key=config.mistral_api_key,
+            base_url="https://api.mistral.ai/v1",
             temperature=temperature,
             max_tokens=8192,
         )

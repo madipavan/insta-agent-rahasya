@@ -34,7 +34,16 @@ class FallbackChatModel:
         last_exc: Exception | None = None
         for idx in range(self._active_idx, len(self._chain)):
             provider = self._chain[idx]
-            llm = build_chat_model(self.config, provider, self.temperature)
+            try:
+                llm = build_chat_model(self.config, provider, self.temperature)
+            except Exception as exc:
+                last_exc = exc
+                if idx < len(self._chain) - 1:
+                    nxt = self._chain[idx + 1]
+                    if self.logger:
+                        self.logger.warn("llm", f"{provider} unavailable — trying {nxt}")
+                    continue
+                raise
             try:
                 result = llm.invoke(messages)
                 self._active_idx = idx

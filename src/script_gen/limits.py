@@ -6,15 +6,15 @@ import re
 
 from src.config import AppConfig
 
-# Hindi edge-tts ~11 chars/s (min) / ~10 chars/s (max, conservative for Instagram)
+# Hindi edge-tts: ~11 chars/s (fast) to ~7 chars/s (slow dramatic delivery)
 CHARS_PER_SECOND_MIN = 11
-CHARS_PER_SECOND_MAX = 10
+CHARS_PER_SECOND_MAX = 7
 INSTAGRAM_MAX_REEL_SEC = 90
 
 
 def script_char_limits(config: AppConfig) -> tuple[int, int]:
     """Return (min_chars, max_chars) for voiceover length."""
-    min_chars = config.script_min_seconds * CHARS_PER_SECOND_MIN
+    min_chars = config.script_min_seconds * CHARS_PER_SECOND_MAX
     max_chars = config.script_max_seconds * CHARS_PER_SECOND_MAX
     return min_chars, max_chars
 

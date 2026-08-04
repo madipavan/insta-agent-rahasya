@@ -43,6 +43,7 @@ class ElevenLabsVoiceover(VoiceoverBase):
                 self._concat_audio(part_paths, output_path)
 
         duration = self._get_duration(output_path)
+        duration = self._enforce_max_duration(output_path, duration)
         self._check_duration(duration)
         self.logger.ok("voiceover", f"elevenlabs ({voice_label}) {duration:.1f}s")
         return output_path

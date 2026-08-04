@@ -56,19 +56,16 @@ class EdgeTTSVoiceover(VoiceoverBase):
                 self._concat_audio(parts, output_path)
 
         duration = self._get_duration(output_path)
+        duration = self._enforce_max_duration(output_path, duration)
         self._check_duration(duration)
         self.logger.ok("voiceover", f"edge-tts {duration:.1f}s")
         return output_path
 
     def _prepare_performance_text(self, text: str) -> str:
-        """Add natural pauses for dubbing-style delivery."""
+        """Light pauses for dubbing tone without blowing past Instagram duration."""
         t = text.strip()
-        # Ellipsis → longer dramatic pause
-        t = re.sub(r"…+", " … ", t)
-        t = re.sub(r"\.{3,}", " … ", t)
-        # Sentence ends → micro-pause
-        t = re.sub(r"(?<=[।!?])\s*", " ", t)
-        # Em-dash / hyphen dramatic beats
+        t = re.sub(r"…+", "…", t)
+        t = re.sub(r"\.{3,}", "…", t)
         t = re.sub(r"\s*—\s*", " — ", t)
         return t.strip()
 

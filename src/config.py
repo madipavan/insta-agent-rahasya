@@ -38,8 +38,14 @@ class StaticPostConfig:
     width: int = 1080
     height: int = 1350
     layout_rotation: str = "quote"
-    chars_per_slide: int = 100
+    chars_per_slide: int = 88
     max_slides: int = 10
+    quote_font_size_max: int = 44
+    quote_font_size_min: int = 30
+    hindi_bold: bool = False
+    text_stroke_width: int = 1
+    max_lines_per_slide: int = 10
+    text_area_ratio: float = 0.65
 
 
 @dataclass

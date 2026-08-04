@@ -89,10 +89,14 @@ def split_into_slides_capped(
     if not text:
         return []
 
-    slides = split_into_slides(text, max_chars=max_chars)
+    if len(text) <= max_chars:
+        return [text]
+
+    ideal_count = min(max_slides, max(2, -(-len(text) // max_chars)))
+    target_chars = max(max_chars, -(-len(text) // ideal_count))
+    slides = split_into_slides(text, max_chars=target_chars, max_slides=0)
     if len(slides) <= max_slides:
         return slides
 
-    # redistribute across max_slides even chunks
     target_chars = max(max_chars, (len(text) // max_slides) + 1)
-    return cap_slides(split_into_slides(text, max_chars=target_chars), max_slides)
+    return cap_slides(split_into_slides(text, max_chars=target_chars, max_slides=0), max_slides)

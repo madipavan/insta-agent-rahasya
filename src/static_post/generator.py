@@ -76,10 +76,16 @@ class StaticPostGenerator:
     def _build_slide_texts(self, script: ScriptOutput) -> list[str]:
         max_chars = self.config.static_post.chars_per_slide
         max_slides = self.config.static_post.max_slides
-        source = script.carousel_source()
+        # Carousel must mirror the full reel voiceover, not the short static_post_text blurb.
+        source = (script.episode_only_script or script.voiceover_script or "").strip()
         if not source:
-            source = script.static_post_text or script.hook
+            source = (script.static_post_text or script.hook or "").strip()
         slides = split_into_slides_capped(source, max_chars=max_chars, max_slides=max_slides)
+        if slides:
+            self.logger.info(
+                f"static_post | {len(source)} chars → {len(slides)} slides "
+                f"(max {max_slides}, ~{max_chars} chars/slide)"
+            )
         return slides or [script.static_post_text or script.hook or "..."]
 
     def _resolve_background(

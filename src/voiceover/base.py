@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.utils.ffmpeg_path import get_media_duration
+from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
+from src.utils.ffmpeg_path import require_media_duration
 
 
 class VoiceoverBase:
@@ -14,8 +15,7 @@ class VoiceoverBase:
         self.logger = logger
 
     def _get_duration(self, audio_path: Path) -> float:
-        duration = get_media_duration(audio_path)
-        return duration if duration is not None else 25.0
+        return require_media_duration(audio_path, label="voiceover")
 
     def _check_duration(self, duration: float) -> None:
         target_min = self.config.script_min_seconds

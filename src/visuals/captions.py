@@ -7,6 +7,7 @@ from pathlib import Path
 
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
+from src.utils.ffmpeg_path import require_media_duration
 
 
 @dataclass
@@ -51,10 +52,9 @@ class CaptionGenerator:
             return self._fallback_segments(audio_path)
 
     def _fallback_segments(self, audio_path: Path) -> list[CaptionSegment]:
-        try:
-            import ffmpeg
-            probe = ffmpeg.probe(str(audio_path))
-            duration = float(probe["format"]["duration"])
-        except Exception:
-            duration = 25.0
+        duration = require_media_duration(audio_path, label="voiceover")
+        self.logger.warn(
+            "captions",
+            f"using empty caption fallback for full audio ({duration:.1f}s)",
+        )
         return [CaptionSegment(text="", start=0.0, end=duration)]

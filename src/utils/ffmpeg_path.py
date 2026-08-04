@@ -24,6 +24,8 @@ def get_ffmpeg_exe() -> str:
 
 
 def get_media_duration(path: Path) -> float | None:
+    if not path.exists():
+        return None
     try:
         import ffmpeg
 
@@ -45,3 +47,15 @@ def get_media_duration(path: Path) -> float | None:
     except Exception:
         return None
     return None
+
+
+def require_media_duration(path: Path, *, label: str = "media") -> float:
+    """Return audio/video duration in seconds or raise with an actionable error."""
+    duration = get_media_duration(path)
+    if duration is not None:
+        return duration
+    raise RuntimeError(
+        f"Could not read duration of {label} file: {path}. "
+        "Ensure the file exists and ffmpeg/ffprobe are on PATH "
+        "(winget install Gyan.FFmpeg)."
+    )

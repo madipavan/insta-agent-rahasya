@@ -11,11 +11,10 @@ CHARS_PER_SECOND = 11
 
 
 def script_char_limits(config: AppConfig) -> tuple[int, int]:
-    """Return (min_chars, max_chars) for voiceover/carousel text."""
+    """Return (min_chars, max_chars) for voiceover length."""
     min_chars = config.script_min_seconds * CHARS_PER_SECOND
     max_chars = config.script_max_seconds * CHARS_PER_SECOND
-    carousel_cap = config.static_post.max_slides * config.static_post.chars_per_slide
-    return min_chars, min(max_chars, carousel_cap)
+    return min_chars, max_chars
 
 
 def max_reel_duration_sec(config: AppConfig) -> float:

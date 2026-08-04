@@ -57,9 +57,12 @@ class BrandTemplates:
                 return ImageFont.truetype(str(path), size)
         return ImageFont.load_default()
 
-    def _quote_font_for(self, text: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+    def _quote_font_for(
+        self, text: str, size: int, *, bold: bool | None = None
+    ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         if self._is_hindi(text):
-            return self._get_hindi_font(size)
+            use_bold = self.config.static_post.hindi_bold if bold is None else bold
+            return self._get_hindi_font(size, bold=use_bold)
         return self._get_font(self.config.brand.quote_font, size)
 
     def create_card(
@@ -114,9 +117,18 @@ class BrandTemplates:
         img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
         draw = ImageDraw.Draw(img)
+        sp = self.config.static_post
         font, wrapped, text_y = self._fit_quote_text(draw, quote, width, height)
 
-        self._draw_centered_text(draw, wrapped, width, text_y, font, (245, 245, 245))
+        self._draw_centered_text(
+            draw,
+            wrapped,
+            width,
+            text_y,
+            font,
+            (245, 245, 245),
+            stroke_width=sp.text_stroke_width,
+        )
 
         watermark_font = self._get_font(self.config.brand.body_font, 28)
         watermark = self.config.brand.watermark_text
@@ -142,27 +154,33 @@ class BrandTemplates:
         width: int,
         height: int,
     ) -> tuple[ImageFont.FreeTypeFont | ImageFont.ImageFont, str, int]:
-        max_text_height = int(height * 0.5)
+        sp = self.config.static_post
+        max_text_height = int(height * sp.text_area_ratio)
         is_hindi = self._is_hindi(quote)
-        wrap_widths = [14, 12, 10, 8] if is_hindi else [24, 20, 18, 16]
-        font_sizes = [64, 58, 52, 46, 40] if is_hindi else [48, 44, 40, 36, 32]
+        max_lines = sp.max_lines_per_slide
+        size_max = sp.quote_font_size_max
+        size_min = sp.quote_font_size_min
+        font_sizes = list(range(size_max, size_min - 1, -4))
+        if not font_sizes:
+            font_sizes = [size_max, size_min]
+        wrap_widths = [18, 16, 14, 12, 10] if is_hindi else [28, 24, 22, 20, 18]
 
         for font_size in font_sizes:
             font = self._quote_font_for(quote, font_size)
             for wrap_w in wrap_widths:
                 wrapped = textwrap.fill(quote, width=wrap_w)
                 bbox = draw.multiline_textbbox(
-                    (0, 0), wrapped, font=font, align="center", spacing=18,
+                    (0, 0), wrapped, font=font, align="center", spacing=14,
                 )
                 text_h = bbox[3] - bbox[1]
                 line_count = wrapped.count("\n") + 1
-                if text_h <= max_text_height and line_count <= 6:
+                if text_h <= max_text_height and line_count <= max_lines:
                     y = (height - text_h) // 2 - 30
                     return font, wrapped, max(100, y)
 
-        font = self._quote_font_for(quote, 40 if is_hindi else 32)
-        wrapped = textwrap.fill(quote, width=10 if is_hindi else 18)
-        bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, align="center", spacing=16)
+        font = self._quote_font_for(quote, size_min)
+        wrapped = textwrap.fill(quote, width=12 if is_hindi else 20)
+        bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, align="center", spacing=12)
         text_h = bbox[3] - bbox[1]
         return font, wrapped, max(100, (height - text_h) // 2 - 30)
 
@@ -296,8 +314,9 @@ class BrandTemplates:
         y: int,
         font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
         color: tuple[int, int, int],
+        stroke_width: int = 3,
     ) -> None:
-        bbox = draw.multiline_textbbox((0, 0), text, font=font, align="center", spacing=18)
+        bbox = draw.multiline_textbbox((0, 0), text, font=font, align="center", spacing=14)
         text_width = bbox[2] - bbox[0]
         x = (width - text_width) // 2
         draw.multiline_text(
@@ -306,9 +325,9 @@ class BrandTemplates:
             font=font,
             fill=color,
             align="center",
-            spacing=18,
-            stroke_width=3,
-            stroke_fill=(0, 0, 0),
+            spacing=14,
+            stroke_width=stroke_width,
+            stroke_fill=(0, 0, 0) if stroke_width > 0 else None,
         )
 
     def _add_watermark(self, img: Image.Image) -> None:

@@ -69,8 +69,15 @@ static_post:
   width: 1080
   height: 1350
   layout_rotation: quote
-  chars_per_slide: 100
+  # ~88 chars × 10 slides ≈ full 80s reel script (825–880 Hindi chars)
+  chars_per_slide: 88
   max_slides: 10
+  quote_font_size_max: 44
+  quote_font_size_min: 30
+  hindi_bold: false
+  text_stroke_width: 1
+  max_lines_per_slide: 10
+  text_area_ratio: 0.65
 
 video:
   width: 1080

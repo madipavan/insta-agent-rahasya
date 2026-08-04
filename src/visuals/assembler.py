@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from src.utils.ffmpeg_path import get_ffmpeg_exe, get_media_duration
+from src.utils.ffmpeg_path import get_ffmpeg_exe, require_media_duration
 
 from src.brand.templates import BrandTemplates
 from src.book_queue.models import EpisodeContext, ScriptOutput
@@ -114,8 +114,7 @@ class ReelAssembler:
         return output_path
 
     def _get_duration(self, path: Path) -> float:
-        duration = get_media_duration(path)
-        return duration if duration is not None else 25.0
+        return require_media_duration(path, label="voiceover")
 
     def _scale_pad_filter(self, width: int, height: int) -> str:
         return (

@@ -57,6 +57,7 @@ class VideoConfig:
     photo_count: int = 2
     artistic_stock: bool = True
     bgm_volume: float = 0.22
+    instagram_max_sec: int = 90
 
 
 @dataclass

@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from src.script_gen.limits import max_reel_duration_sec
 from src.utils.ffmpeg_path import get_ffmpeg_exe, require_media_duration
 
 from src.brand.templates import BrandTemplates
@@ -64,6 +65,18 @@ class ReelAssembler:
             audio_duration = self._get_duration(audio_path)
             intro_dur = self.config.brand.intro_duration_sec
             outro_dur = self.config.brand.outro_duration_sec
+            max_main = float(self.config.script_max_seconds)
+            if audio_duration > max_main + 0.5:
+                self.logger.warn(
+                    "reel_assembly",
+                    f"trimming voiceover {audio_duration:.1f}s → {max_main:.0f}s for Instagram",
+                )
+                trimmed = tmp_dir / "trimmed_voiceover.mp3"
+                self._run_ffmpeg([
+                    "-y", "-i", str(audio_path), "-t", str(max_main), "-c:a", "copy", str(trimmed),
+                ])
+                audio_path = trimmed
+                audio_duration = max_main
             main_dur = max(1.0, audio_duration)
 
             self._create_image_video(intro_path, intro_video, intro_dur, fps, width, height)
@@ -105,8 +118,12 @@ class ReelAssembler:
 
             self._run_ffmpeg([
                 "-y", "-i", str(combined), "-i", str(final_audio),
-                "-c:v", "copy", "-c:a", "aac",
-                "-map", "0:v:0", "-map", "1:a:0",
+                "-t", str(max_reel_duration_sec(self.config)),
+                "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.0",
+                "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+                "-movflags", "+faststart",
+                "-map", "0:v:0", "-map", "1:a:0", "-shortest",
                 str(output_path),
             ])
 

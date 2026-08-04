@@ -120,7 +120,10 @@ class MetaScheduler:
             cover_url = self._upload_cover_image(thumbnail_path)
 
         reel_container = self._create_reel_container(
-            reel_path, reel_caption, cover_url=cover_url, publish_at=reel_time
+            self._prepare_reel_for_instagram(reel_path),
+            reel_caption,
+            cover_url=cover_url,
+            publish_at=reel_time,
         )
         reel_publish_id = self._wait_and_publish(reel_container, publish_at=reel_time)
 
@@ -199,21 +202,61 @@ class MetaScheduler:
         self._resumable_upload(container_id, video_path)
         return container_id
 
+    def _prepare_reel_for_instagram(self, video_path: Path) -> Path:
+        """Re-encode to H.264/AAC + faststart and enforce Instagram's 90s reel cap."""
+        import subprocess
+        import tempfile
+
+        from src.utils.ffmpeg_path import get_ffmpeg_exe, get_media_duration
+
+        max_sec = float(getattr(self.config.video, "instagram_max_sec", 90))
+        out = Path(tempfile.mkstemp(suffix="_ig.mp4")[1])
+        cmd = [
+            get_ffmpeg_exe(), "-y",
+            "-i", str(video_path),
+            "-t", str(max_sec),
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.0",
+            "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+            "-movflags", "+faststart",
+            str(out),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Instagram video prep failed: {result.stderr[-800:]}")
+        final_dur = get_media_duration(out)
+        self.logger.info(
+            f"meta | prepared reel for upload: {out.stat().st_size} bytes, {final_dur:.1f}s"
+        )
+        return out
+
     def _resumable_upload(self, container_id: str, file_path: Path) -> None:
         file_size = file_path.stat().st_size
+        if file_size == 0:
+            raise RuntimeError(f"Video file is empty: {file_path}")
+        if file_size > 100 * 1024 * 1024:
+            raise RuntimeError(
+                f"Video too large for Instagram upload ({file_size / (1024 * 1024):.1f} MiB, max ~100 MiB)"
+            )
+
+        with open(file_path, "rb") as f:
+            video_data = f.read()
+
         headers = {
-            **self._headers(),
+            "Authorization": f"OAuth {self.access_token}",
             "offset": "0",
             "file_size": str(file_size),
+            "Content-Type": "application/octet-stream",
         }
-        with open(file_path, "rb") as f:
-            resp = requests.post(
-                f"{self.RUPLOAD_URL}/{container_id}",
-                headers=headers,
-                data=f,
-                timeout=600,
-            )
-        resp.raise_for_status()
+        resp = requests.post(
+            f"{self.RUPLOAD_URL}/{container_id}",
+            headers=headers,
+            data=video_data,
+            timeout=600,
+        )
+        if resp.status_code >= 400:
+            self._log_api_error("rupload", resp)
+            raise RuntimeError(f"rupload failed ({resp.status_code}): {resp.text[:500]}")
         self.logger.info(f"Uploaded {file_path.name} ({file_size} bytes)")
 
     def _wait_and_publish(

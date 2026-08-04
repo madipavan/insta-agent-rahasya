@@ -6,24 +6,28 @@ import re
 
 from src.config import AppConfig
 
-# Hindi edge-tts ~11 chars/second average
-CHARS_PER_SECOND = 11
+# Hindi edge-tts ~11 chars/s (min) / ~10 chars/s (max, conservative for Instagram)
+CHARS_PER_SECOND_MIN = 11
+CHARS_PER_SECOND_MAX = 10
+INSTAGRAM_MAX_REEL_SEC = 90
 
 
 def script_char_limits(config: AppConfig) -> tuple[int, int]:
     """Return (min_chars, max_chars) for voiceover length."""
-    min_chars = config.script_min_seconds * CHARS_PER_SECOND
-    max_chars = config.script_max_seconds * CHARS_PER_SECOND
+    min_chars = config.script_min_seconds * CHARS_PER_SECOND_MIN
+    max_chars = config.script_max_seconds * CHARS_PER_SECOND_MAX
     return min_chars, max_chars
 
 
 def max_reel_duration_sec(config: AppConfig) -> float:
-    """Total reel length including intro/outro cards."""
-    return (
+    """Total reel length including intro/outro cards (capped for Instagram API)."""
+    target = (
         config.script_max_seconds
         + config.brand.intro_duration_sec
         + config.brand.outro_duration_sec
     )
+    ig_cap = getattr(config.video, "instagram_max_sec", INSTAGRAM_MAX_REEL_SEC)
+    return min(target, float(ig_cap))
 
 
 def trim_to_limit(text: str, max_chars: int) -> str:

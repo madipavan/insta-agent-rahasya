@@ -20,8 +20,13 @@ class VoiceoverBase:
     def _check_duration(self, duration: float) -> None:
         target_min = self.config.script_min_seconds
         target_max = self.config.script_max_seconds
-        if duration < target_min or duration > target_max + 15:
+        if duration < target_min - 5:
             self.logger.warn(
                 "voiceover",
-                f"duration {duration:.1f}s outside {target_min}-{target_max}s target",
+                f"duration {duration:.1f}s below {target_min}s target",
+            )
+        if duration > target_max + 2:
+            raise ValueError(
+                f"Voiceover {duration:.1f}s exceeds {target_max}s max "
+                f"(Instagram reels must be ≤90s total). Shorten the script."
             )

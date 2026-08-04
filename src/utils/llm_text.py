@@ -7,6 +7,10 @@ from typing import Any
 
 def extract_llm_text(response: Any) -> str:
     """Normalize AIMessage content to a string (handles list blocks / empty content)."""
+    direct = getattr(response, "text", None)
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+
     content = getattr(response, "content", "")
     if isinstance(content, str):
         text = content.strip()
@@ -22,12 +26,16 @@ def extract_llm_text(response: Any) -> str:
                 continue
             if not isinstance(block, dict):
                 continue
-            if block.get("thought") or block.get("extras", {}).get("thought"):
+            block_type = str(block.get("type", "")).lower()
+            if block_type in {"thinking", "reasoning"}:
                 continue
-            if block.get("type") == "text":
-                text = str(block.get("text", "")).strip()
-                if text:
-                    parts.append(text)
+            if block.get("thought") or block.get("thinking"):
+                continue
+            if block.get("extras", {}).get("thought"):
+                continue
+            text_val = block.get("text")
+            if text_val:
+                parts.append(str(text_val))
         joined = "".join(parts).strip()
         if joined:
             return joined

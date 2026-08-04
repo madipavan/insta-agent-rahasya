@@ -71,7 +71,7 @@ class AppConfig:
     llm_model_anthropic: str = "claude-sonnet-4-20250514"
     llm_model_openai: str = "gpt-4o"
     llm_model_groq: str = "llama-3.3-70b-versatile"
-    llm_model_gemini: str = "gemini-2.5-flash"
+    llm_model_gemini: str = "gemini-2.5-flash-lite"
     post_time: str = "19:30"
     timezone: str = "Asia/Kolkata"
     voice_provider: str = "elevenlabs"
@@ -143,7 +143,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         llm_model_anthropic=raw.get("llm_model_anthropic", "claude-sonnet-4-20250514"),
         llm_model_openai=raw.get("llm_model_openai", "gpt-4o"),
         llm_model_groq=raw.get("llm_model_groq", "llama-3.3-70b-versatile"),
-        llm_model_gemini=raw.get("llm_model_gemini", "gemini-2.5-flash"),
+        llm_model_gemini=raw.get("llm_model_gemini", "gemini-2.5-flash-lite"),
         post_time=raw.get("post_time", "19:30"),
         timezone=raw.get("timezone", "Asia/Kolkata"),
         voice_provider=raw.get("voice_provider", "elevenlabs"),

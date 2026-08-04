@@ -144,8 +144,9 @@ class ScriptGraphRunner:
                 f"Rewrite with voiceover_script between {state['min_chars']}-{state['max_chars']} chars. "
                 "NO recap. Named characters. Stronger hook. Sharper cliffhanger."
             )
-        data = self.crew.write_script(
-            state["brief"] + extra,
+        data = self.crew.refine_script(
+            state["script_data"],
+            extra,
             state["min_chars"],
             state["max_chars"],
         )

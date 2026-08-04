@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -100,10 +101,19 @@ class ScriptCrew:
     ) -> dict[str, Any]:
         last_preview = ""
         for attempt in range(1, MAX_LLM_ATTEMPTS + 1):
-            resp = llm.invoke([
-                SystemMessage(content=system),
-                HumanMessage(content=user),
-            ])
+            try:
+                resp = llm.invoke([
+                    SystemMessage(content=system),
+                    HumanMessage(content=user),
+                ])
+            except Exception as exc:
+                err = str(exc).lower()
+                if "rate_limit" in err or "413" in err or "429" in err:
+                    wait = 20 * attempt
+                    self.logger.warn("script_crew", f"{label} rate limited — wait {wait}s")
+                    time.sleep(wait)
+                    continue
+                raise
             text = extract_llm_text(resp)
             if not text:
                 self.logger.warn("script_crew", f"{label} empty response (attempt {attempt})")

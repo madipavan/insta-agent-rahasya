@@ -12,7 +12,7 @@ on:
         default: true
 
 concurrency:
-  group: daily-publish
+  group: rahasya-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -98,27 +98,14 @@ jobs:
       - name: Publish to Instagram
         run: |
           echo "Pending publish bundles in DB:"
-          python -c "from src.config import load_config; from src.pipeline.publisher import pending_publish_count; print(pending_publish_count(load_config()))"
+          PENDING=$(python -c "from src.config import load_config; from src.pipeline.publisher import pending_publish_count; print(pending_publish_count(load_config()))")
+          echo "$PENDING"
+          if [ "$PENDING" = "0" ]; then
+            echo "::error::No bundles in pending_publish queue. Run Daily Pipeline first and wait for it to finish."
+            exit 1
+          fi
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_immediately }}" = "true" ]; then
-            OUT=$(python main.py publish --now 2>&1) || true
-            echo "$OUT"
-            if echo "$OUT" | grep -q "Nothing to publish"; then
-              if [ -z "$GEMINI_API_KEY" ] && [ -z "$GROQ_API_KEY" ]; then
-                echo "::error::No bundle to publish and no LLM key for generate fallback (set GEMINI_API_KEY or GROQ_API_KEY)"
-                exit 1
-              fi
-              echo "No bundle in queue — generating episode and publishing now..."
-              python main.py run --publish-now
-            fi
+            python main.py publish --now
           else
             python main.py publish
           fi
-
-      - name: Save pipeline state
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            data
-            output
-          key: rahasya-state-${{ github.ref }}

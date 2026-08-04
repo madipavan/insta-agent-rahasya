@@ -12,7 +12,7 @@ brand:
 
 llm_provider: groq
 # Alternatives: gemini | openai | anthropic
-llm_model_groq: openai/gpt-oss-20b
+llm_model_groq: llama-3.3-70b-versatile
 llm_model_gemini: gemini-2.5-flash
 llm_model_anthropic: claude-sonnet-4-20250514
 llm_model_openai: gpt-4o

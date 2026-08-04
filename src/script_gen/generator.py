@@ -36,10 +36,11 @@ class ScriptGenerator:
         scripts_dir = self.config.path("sample_scripts")
         if not scripts_dir.exists():
             return []
-        samples: list[str] = []
         for path in sorted(scripts_dir.glob("*.txt")):
-            samples.append(path.read_text(encoding="utf-8").strip())
-        return samples
+            text = path.read_text(encoding="utf-8").strip()
+            if text:
+                return [text[:700]]
+        return []
 
     def format_caption(self, context: EpisodeContext, script: ScriptOutput) -> str:
         template = self.config.caption_template or (

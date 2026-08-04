@@ -12,7 +12,7 @@ on:
         default: true
 
 concurrency:
-  group: daily-pipeline
+  group: rahasya-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:

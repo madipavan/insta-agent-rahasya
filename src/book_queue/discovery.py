@@ -15,6 +15,10 @@ from src.script_gen.provider import get_provider
 
 GUTENBERG_SEARCH = "https://gutendex.com/books"
 TMDB_SEARCH = "https://api.themoviedb.org/3/search/multi"
+HTTP_HEADERS = {
+    "User-Agent": "Rahasya.exe/1.0 (https://github.com/madipavan/insta-agent-rahasya; content-bot)",
+    "Accept": "application/json",
+}
 
 # Curated public-domain thriller/suspense keywords for Gutenberg search
 SEARCH_TERMS = [
@@ -84,6 +88,7 @@ class NovelDiscovery:
                 resp = requests.get(
                     GUTENBERG_SEARCH,
                     params={"search": term, "languages": "en"},
+                    headers=HTTP_HEADERS,
                     timeout=30,
                 )
                 resp.raise_for_status()
@@ -133,6 +138,7 @@ class NovelDiscovery:
             resp = requests.get(
                 TMDB_SEARCH,
                 params={"api_key": self.config.tmdb_api_key, "query": query},
+                headers=HTTP_HEADERS,
                 timeout=20,
             )
             resp.raise_for_status()

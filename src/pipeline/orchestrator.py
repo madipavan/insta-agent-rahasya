@@ -12,7 +12,6 @@ from src.review.bundle import ReviewBundleWriter
 from src.script_gen.export import write_script_txt, write_transcript_txt
 from src.script_gen.post_details import build_post_details, write_post_details_json, write_post_details_txt
 from src.review.telegram import TelegramNotifier
-from src.scheduler.factory import get_scheduler
 
 
 class Pipeline:
@@ -20,10 +19,9 @@ class Pipeline:
         self.config = config
         self.logger = PipelineLogger(config.path("logs_dir"))
         self.db = Database(config.path("db_path"))
-        self.queue = BookQueue(config, self.logger)
+        self._queue: BookQueue | None = None
         self.review = ReviewBundleWriter(config, self.db)
         self.telegram = TelegramNotifier(config, self.logger)
-        self.scheduler = get_scheduler(config, self.logger)
         self._script_gen = None
         self._voiceover = None
         self._stock = None
@@ -31,6 +29,12 @@ class Pipeline:
         self._static_post = None
         self._novel_assets = None
         self._hashtags = None
+
+    @property
+    def queue(self) -> BookQueue:
+        if self._queue is None:
+            self._queue = BookQueue(self.config, self.logger)
+        return self._queue
 
     @property
     def script_gen(self):
@@ -202,53 +206,9 @@ class Pipeline:
             raise
 
     def approve_and_post(self, bundle_id: str) -> None:
-        self.logger.start("approve", bundle_id)
-        approved_dir = self.review.approve(bundle_id)
-        caption_path = approved_dir / "caption.txt"
-        caption = caption_path.read_text(encoding="utf-8") if caption_path.exists() else ""
+        from src.pipeline.publisher import approve_and_post
 
-        post_details = None
-        post_details_path = approved_dir / "post_details.json"
-        if post_details_path.exists():
-            import json
-            from src.script_gen.post_details import PostDetails
-            data = json.loads(post_details_path.read_text(encoding="utf-8"))
-            post_details = PostDetails(**data)
-
-        thumbnail_path = approved_dir / "thumbnail.png"
-        if not thumbnail_path.exists():
-            thumbnail_path = None
-
-        post_id = self.scheduler.queue_posts(
-            approved_dir / "reel.mp4",
-            sorted(approved_dir.glob("static_post_*.png")) or [approved_dir / "static_post.png"],
-            caption,
-            bundle_id,
-            thumbnail_path=thumbnail_path,
-            post_details=post_details,
-        )
-
-        bundle = self.db.get_review_bundle(bundle_id)
-        if bundle:
-            self.db.log_post(
-                bundle["novel_id"],
-                bundle["episode_num"],
-                bundle_id,
-                "posted",
-                metricool_id=post_id,
-            )
-            self.db.set_review_status(bundle_id, "posted")
-
-        posted_dir = self.config.path("output_dir") / "posted" / bundle_id
-        posted_dir.parent.mkdir(parents=True, exist_ok=True)
-        import shutil
-        if posted_dir.exists():
-            shutil.rmtree(posted_dir)
-        shutil.copytree(approved_dir, posted_dir)
-
-        provider = self.config.post_provider or "meta"
-        self.telegram.send_info(f"✅ Posted/queued: `{bundle_id}`\n{provider}: {post_id}")
-        self.logger.ok("approve", post_id)
+        approve_and_post(self.config, bundle_id, logger=self.logger)
 
     def reject_bundle(self, bundle_id: str, reason: str = "") -> None:
         self.review.reject(bundle_id, reason)
@@ -264,37 +224,6 @@ class Pipeline:
         self.telegram.send_info(f"❌ Rejected: `{bundle_id}` — {reason}")
 
     def publish_pending(self) -> str | None:
-        """Post the oldest bundle queued with pending_publish (after min delay)."""
-        from datetime import datetime, timedelta
-        from zoneinfo import ZoneInfo
+        from src.pipeline.publisher import publish_pending
 
-        bundles = self.db.list_pending_publish()
-        if not bundles:
-            self.logger.info("publish | no bundles waiting")
-            return None
-
-        min_age = timedelta(hours=self.config.min_publish_delay_hours)
-        now = datetime.now(ZoneInfo(self.config.timezone))
-        eligible: list[dict] = []
-        for bundle in bundles:
-            created_raw = bundle.get("metadata", {}).get("created_at", "")
-            try:
-                created = datetime.fromisoformat(created_raw)
-                if created.tzinfo is None:
-                    created = created.replace(tzinfo=ZoneInfo(self.config.timezone))
-            except ValueError:
-                created = now - min_age
-            if now - created >= min_age:
-                eligible.append(bundle)
-
-        if not eligible:
-            self.logger.info(
-                f"publish | waiting — next bundle needs "
-                f"{self.config.min_publish_delay_hours}h after generation"
-            )
-            return None
-
-        bundle_id = eligible[0]["bundle_id"]
-        self.logger.start("publish", bundle_id)
-        self.approve_and_post(bundle_id)
-        return bundle_id
+        return publish_pending(self.config, logger=self.logger)

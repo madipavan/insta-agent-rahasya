@@ -118,7 +118,7 @@ jobs:
             output/approved
             output/posted
             output/ready_to_upload
-          key: rahasya-state-${{ github.ref }}-${{ github.run_id }}
+          key: rahasya-state-${{ github.ref }}
 
       - name: Upload latest output
         if: always()

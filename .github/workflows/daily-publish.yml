@@ -38,6 +38,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Show build info
+        run: |
+          echo "Commit: $(git rev-parse HEAD)"
+          echo "GEMINI_API_KEY set: $([ -n \"$GEMINI_API_KEY\" ] && echo yes || echo no)"
+          echo "META_ACCESS_TOKEN set: $([ -n \"$META_ACCESS_TOKEN\" ] && echo yes || echo no)"
+
       - name: Restore pipeline state
         uses: actions/cache/restore@v4
         with:
@@ -91,6 +97,8 @@ jobs:
 
       - name: Publish to Instagram
         run: |
+          echo "Pending publish bundles in DB:"
+          python -c "from src.config import load_config; from src.pipeline.publisher import pending_publish_count; print(pending_publish_count(load_config()))"
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.publish_immediately }}" = "true" ]; then
             OUT=$(python main.py publish --now 2>&1) || true
             echo "$OUT"
@@ -113,4 +121,4 @@ jobs:
           path: |
             data
             output
-          key: rahasya-state-${{ github.ref }}-${{ github.run_id }}
+          key: rahasya-state-${{ github.ref }}

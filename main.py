@@ -25,8 +25,9 @@ def cmd_publish(args: argparse.Namespace) -> None:
     config = load_config()
     if getattr(args, "now", False):
         config.min_publish_delay_hours = 0
-    pipeline = Pipeline(config)
-    bundle_id = pipeline.publish_pending()
+    from src.pipeline.publisher import publish_pending
+
+    bundle_id = publish_pending(config)
     if bundle_id:
         print(f"Published: {bundle_id}")
     else:

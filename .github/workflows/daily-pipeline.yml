@@ -58,11 +58,7 @@ jobs:
         with:
           path: |
             data
-            output/stock_cache
-            output/review
-            output/approved
-            output/posted
-            output/ready_to_upload
+            output
           key: rahasya-state-${{ github.ref }}
           restore-keys: |
             rahasya-state-${{ github.ref }}-
@@ -113,11 +109,7 @@ jobs:
         with:
           path: |
             data
-            output/stock_cache
-            output/review
-            output/approved
-            output/posted
-            output/ready_to_upload
+            output
           key: rahasya-state-${{ github.ref }}
 
       - name: Upload latest output

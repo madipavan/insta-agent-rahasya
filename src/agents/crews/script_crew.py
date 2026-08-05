@@ -25,6 +25,7 @@ Every script is a complete mini-story: specific characters, places, events, stak
 NEVER write vague filler like "एक आदमी जो अपनी जान बचाने की कोशिश कर रहा है".
 Name the hero. Describe what happened. Build tension scene by scene.
 Use ellipsis (…) for dramatic pauses before reveals.
+Add emotional beats — fear, suspense, shock — not flat narration.
 HIT the minimum character count — short scripts are rejected."""
 
 EDITOR_SYSTEM = """You are a Retention Editor for Hindi thriller reels.

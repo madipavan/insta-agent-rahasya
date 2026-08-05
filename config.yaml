@@ -24,19 +24,22 @@ llm_model_openai: gpt-4o
 post_time: "19:30"
 timezone: "Asia/Kolkata"
 
-# Free Hindi female voice (Microsoft edge-tts — no API key needed)
-# Alternatives: fish-audio (set FISH_AUDIO_API_KEY), elevenlabs
-voice_provider: edge-tts
-voice_name: Swara
+# Voice: fish-audio (cloned narrator) with edge-tts fallback
+voice_provider: fish-audio
+voice_name: Rahasya Narrator
 edge_tts_voice: "hi-IN-SwaraNeural"
 voice_language: hindi
 # ElevenLabs (optional — Tarini needs paid plan; premade female e.g. Jessica: cgSgspJ2msm6clMCkdW9)
 voice_id: ""
 elevenlabs_fallback: false
-# Fish Audio (optional — free tier: s2.1-pro-free at https://fish.audio/app/api-keys)
+# Fish Audio — cloned Hindi narrator (https://fish.audio/app/api-keys)
 fish_audio_model: s2.1-pro-free
-fish_audio_voice_id: ""
-fish_audio_speed: 0.95
+fish_audio_voice_id: "bc2253b3f34e4b769cb87636db31a2c7"
+fish_audio_speed: 0.80
+fish_audio_temperature: 0.85
+fish_audio_latency: normal
+fish_audio_sentence_mode: true
+fish_audio_sentence_pause_sec: 0.35
 fish_audio_fallback: true
 
 # Target ~80s voiceover (+ intro/outro cards ≈ 82s total reel)

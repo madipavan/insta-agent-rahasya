@@ -11,6 +11,7 @@ from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.voiceover.edge_tts import EdgeTTSVoiceover
 from src.voiceover.elevenlabs import ElevenLabsVoiceover
+from src.voiceover.fish_audio import FishAudioVoiceover
 
 
 class VoiceoverProvider(Protocol):
@@ -23,12 +24,14 @@ class FallbackVoiceover:
         primary: VoiceoverProvider,
         fallback: VoiceoverProvider,
         logger: PipelineLogger,
-        config: AppConfig,
+        primary_name: str,
+        fallback_name: str = "edge-tts",
     ) -> None:
         self.primary = primary
         self.fallback = fallback
         self.logger = logger
-        self.config = config
+        self.primary_name = primary_name
+        self.fallback_name = fallback_name
 
     def generate(self, text: str, output_path: Path) -> Path:
         try:
@@ -39,14 +42,13 @@ class FallbackVoiceover:
                 detail = str(exc) if exc.args else f"HTTP {code}"
                 self.logger.warn(
                     "voiceover",
-                    f"ElevenLabs ({self.config.voice_name}) failed: {detail}",
+                    f"{self.primary_name} failed: {detail}",
                 )
-                if self.config.elevenlabs_fallback:
-                    self.logger.warn(
-                        "voiceover",
-                        "Falling back to edge-tts Hindi. Fix ELEVENLABS_API_KEY for Tarini.",
-                    )
-                    return self.fallback.generate(text, output_path)
+                self.logger.warn(
+                    "voiceover",
+                    f"Falling back to {self.fallback_name}.",
+                )
+                return self.fallback.generate(text, output_path)
             raise
 
 
@@ -57,10 +59,16 @@ def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> Voiceov
     if provider == "edge-tts":
         return fallback
 
+    if provider == "fish-audio":
+        fish = FishAudioVoiceover(config, logger)
+        if config.fish_audio_fallback:
+            return FallbackVoiceover(fish, fallback, logger, "fish-audio")
+        return fish
+
     elevenlabs = ElevenLabsVoiceover(config, logger)
     if provider in ("elevenlabs", "auto") and config.elevenlabs_api_key and config.voice_id:
         if config.elevenlabs_fallback:
-            return FallbackVoiceover(elevenlabs, fallback, logger, config)
+            return FallbackVoiceover(elevenlabs, fallback, logger, "elevenlabs")
         return elevenlabs
 
     if provider == "elevenlabs":

@@ -15,6 +15,7 @@ from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.visuals.caption_renderer import ass_filter_path, write_ass_subtitles
 from src.visuals.captions import CaptionGenerator, CaptionSegment
+from src.visuals.sfx import SfxMixer, build_sfx_placements
 
 
 class ReelAssembler:
@@ -23,6 +24,7 @@ class ReelAssembler:
         self.logger = logger
         self.brand = BrandTemplates(config)
         self.captions = CaptionGenerator(config, logger)
+        self.sfx = SfxMixer(config, logger)
 
     def assemble(
         self,
@@ -106,7 +108,22 @@ class ReelAssembler:
             ])
 
             padded_audio = tmp_dir / "padded_audio.aac"
-            self._pad_audio(audio_path, padded_audio, intro_dur, outro_dur)
+            vo_for_mix = audio_path
+            if self.config.video.sfx_enabled:
+                sfx_audio = tmp_dir / "voiceover_sfx.mp3"
+                clip_count = len(stock_paths) if stock_paths else self.config.video.clip_count
+                placements = build_sfx_placements(
+                    main_dur,
+                    clip_count,
+                    cliffhanger_before_end_sec=self.config.video.sfx_cliffhanger_before_end_sec,
+                    hook_volume=self.config.video.sfx_hook_volume,
+                    whoosh_volume=self.config.video.sfx_whoosh_volume,
+                    cliffhanger_volume=self.config.video.sfx_cliffhanger_volume,
+                )
+                self.sfx.apply(audio_path, sfx_audio, placements)
+                vo_for_mix = sfx_audio
+
+            self._pad_audio(vo_for_mix, padded_audio, intro_dur, outro_dur)
 
             final_audio = padded_audio
             if bgm_path and bgm_path.exists():

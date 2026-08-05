@@ -25,6 +25,7 @@ post_time: "19:30"
 timezone: "Asia/Kolkata"
 
 # Free Hindi female voice (Microsoft edge-tts — no API key needed)
+# Alternatives: fish-audio (set FISH_AUDIO_API_KEY), elevenlabs
 voice_provider: edge-tts
 voice_name: Swara
 edge_tts_voice: "hi-IN-SwaraNeural"
@@ -32,6 +33,11 @@ voice_language: hindi
 # ElevenLabs (optional — Tarini needs paid plan; premade female e.g. Jessica: cgSgspJ2msm6clMCkdW9)
 voice_id: ""
 elevenlabs_fallback: false
+# Fish Audio (optional — free tier: s2.1-pro-free at https://fish.audio/app/api-keys)
+fish_audio_model: s2.1-pro-free
+fish_audio_voice_id: ""
+fish_audio_speed: 0.95
+fish_audio_fallback: true
 
 # Target ~80s voiceover (+ intro/outro cards ≈ 82s total reel)
 script_min_seconds: 75
@@ -87,6 +93,12 @@ video:
   photo_count: 1
   artistic_stock: true
   bgm_volume: 0.22
+  # Retention SFX mixed under voiceover (hook, cut whooshes, cliffhanger sting)
+  sfx_enabled: true
+  sfx_hook_volume: 0.35
+  sfx_whoosh_volume: 0.22
+  sfx_cliffhanger_volume: 0.30
+  sfx_cliffhanger_before_end_sec: 8.0
 
 paths:
   data_dir: data
@@ -94,5 +106,6 @@ paths:
   output_dir: output
   logs_dir: logs
   stock_library: assets/stock_library
+  sfx_library: assets/sfx_library
   sample_scripts: data/sample_scripts
   novels_seed: data/novels_seed.json

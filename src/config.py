@@ -59,6 +59,11 @@ class VideoConfig:
     bgm_volume: float = 0.22
     instagram_max_sec: int = 90
     instagram_max_upload_mb: int = 12
+    sfx_enabled: bool = True
+    sfx_hook_volume: float = 0.35
+    sfx_whoosh_volume: float = 0.22
+    sfx_cliffhanger_volume: float = 0.30
+    sfx_cliffhanger_before_end_sec: float = 8.0
 
 
 @dataclass
@@ -68,6 +73,7 @@ class PathsConfig:
     output_dir: str = "output"
     logs_dir: str = "logs"
     stock_library: str = "assets/stock_library"
+    sfx_library: str = "assets/sfx_library"
     sample_scripts: str = "data/sample_scripts"
     novels_seed: str = "data/novels_seed.json"
 
@@ -92,6 +98,10 @@ class AppConfig:
     edge_tts_rate: str = "-8%"
     edge_tts_pitch: str = "-2Hz"
     elevenlabs_fallback: bool = True
+    fish_audio_model: str = "s2.1-pro-free"
+    fish_audio_voice_id: str = ""
+    fish_audio_speed: float = 0.95
+    fish_audio_fallback: bool = True
     script_min_seconds: int = 75
     script_max_seconds: int = 80
     cta: str = "Follow for the next part 👀"
@@ -112,6 +122,7 @@ class AppConfig:
     gemini_api_key: str = ""
     mistral_api_key: str = ""
     elevenlabs_api_key: str = ""
+    fish_audio_api_key: str = ""
     pexels_api_key: str = ""
     metricool_api_key: str = ""
     metricool_user_id: str = ""
@@ -169,6 +180,10 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         edge_tts_rate=raw.get("edge_tts_rate", "-8%"),
         edge_tts_pitch=raw.get("edge_tts_pitch", "-2Hz"),
         elevenlabs_fallback=raw.get("elevenlabs_fallback", True),
+        fish_audio_model=raw.get("fish_audio_model", "s2.1-pro-free"),
+        fish_audio_voice_id=raw.get("fish_audio_voice_id", ""),
+        fish_audio_speed=float(raw.get("fish_audio_speed", 0.95)),
+        fish_audio_fallback=raw.get("fish_audio_fallback", True),
         script_min_seconds=raw.get("script_min_seconds", 75),
         script_max_seconds=raw.get("script_max_seconds", 80),
         cta=raw.get("cta", "Follow for the next part 👀"),
@@ -190,6 +205,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     config.gemini_api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
     config.mistral_api_key = os.getenv("MISTRAL_API_KEY", "")
     config.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY", "")
+    config.fish_audio_api_key = os.getenv("FISH_AUDIO_API_KEY", "")
     config.pexels_api_key = os.getenv("PEXELS_API_KEY", "")
     config.metricool_api_key = os.getenv("METRICOOL_API_KEY", "")
     config.metricool_user_id = os.getenv("METRICOOL_USER_ID", "")

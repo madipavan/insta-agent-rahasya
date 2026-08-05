@@ -28,10 +28,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
-      contents: read
+      contents: write
       actions: read
 
     env:
+      GITHUB_TOKEN: ${{ github.token }}
       GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
@@ -49,6 +50,7 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       METRICOOL_API_KEY: ${{ secrets.METRICOOL_API_KEY }}
       METRICOOL_USER_ID: ${{ secrets.METRICOOL_USER_ID }}
+      CATBOX_USERHASH: ${{ secrets.CATBOX_USERHASH }}
 
     steps:
       - name: Checkout

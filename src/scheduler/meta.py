@@ -51,6 +51,8 @@ class MetaScheduler:
     POLL_MAX_ATTEMPTS = 60
     SINGLE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
     CHUNK_SIZE_BYTES = 4 * 1024 * 1024
+    GITHUB_REEL_BRANCH = "ci-reel-uploads"
+    GITHUB_REEL_PREFIX = "tmp-ci-reels"
 
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
         self.config = config
@@ -58,6 +60,7 @@ class MetaScheduler:
         self.ig_user_id = (config.meta_ig_user_id or "").strip()
         self.access_token = (config.meta_access_token or "").strip()
         self.page_id = (config.meta_page_id or "").strip()
+        self._pending_github_reel_cleanup: dict[str, str] | None = None
 
     def is_configured(self) -> bool:
         token = (self.access_token or "").strip()
@@ -121,13 +124,16 @@ class MetaScheduler:
         if thumbnail_path and thumbnail_path.exists():
             cover_url = self._upload_cover_image(thumbnail_path)
 
-        reel_container = self._create_reel_container(
-            self._prepare_reel_for_instagram(reel_path),
-            reel_caption,
-            cover_url=cover_url,
-            publish_at=reel_time,
-        )
-        reel_publish_id = self._wait_and_publish(reel_container, publish_at=reel_time)
+        try:
+            reel_container = self._create_reel_container(
+                self._prepare_reel_for_instagram(reel_path),
+                reel_caption,
+                cover_url=cover_url,
+                publish_at=reel_time,
+            )
+            reel_publish_id = self._wait_and_publish(reel_container, publish_at=reel_time)
+        finally:
+            self._cleanup_github_reel_host()
 
         carousel_container_id = None
         carousel_publish_id = None
@@ -286,8 +292,8 @@ class MetaScheduler:
         """
         Upload reel bytes to a third-party host so Meta can fetch via video_url.
 
-        Meta-hosted Page video URLs are rejected; catbox and similar external hosts work.
-        rupload.facebook.com binary upload is unreliable (ProcessingFailedError at offset 0).
+        Meta-hosted Page video URLs are rejected; external public hosts work.
+        rupload.facebook.com binary upload is unreliable on CI and large files.
         """
         import os
 
@@ -303,11 +309,181 @@ class MetaScheduler:
             f"meta | hosting reel for video_url upload ({size} bytes, {video_path.name})"
         )
 
+        url = self._host_reel_via_github_contents(video_path)
+        if url:
+            return url
+
+        userhash = (os.getenv("CATBOX_USERHASH") or "").strip()
+        if userhash:
+            url = self._host_reel_via_catbox(video_path, userhash=userhash)
+            if url:
+                return url
+
+        return self._host_reel_via_catbox(video_path, userhash=None)
+
+    def _host_reel_via_github_contents(self, video_path: Path) -> str | None:
+        """Upload to a public raw.githubusercontent.com URL (GitHub Actions CI path)."""
+        import base64
+        import os
+        import uuid
+
+        token = (os.getenv("GITHUB_TOKEN") or os.getenv("GH_TOKEN") or "").strip()
+        repo_full = (os.getenv("GITHUB_REPOSITORY") or "").strip()
+        if not token or not repo_full or "/" not in repo_full:
+            return None
+
+        owner, repo_name = repo_full.split("/", 1)
+        branch = self.GITHUB_REEL_BRANCH
+        path = f"{self.GITHUB_REEL_PREFIX}/{uuid.uuid4().hex}.mp4"
+        api = f"https://api.github.com/repos/{owner}/{repo_name}/contents/{path}"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+
+        try:
+            self._ensure_github_ci_branch(token, owner, repo_name, branch)
+            content_b64 = base64.b64encode(video_path.read_bytes()).decode("ascii")
+            resp = requests.put(
+                api,
+                headers=headers,
+                json={
+                    "message": "ci: temporary reel for Instagram video_url",
+                    "content": content_b64,
+                    "branch": branch,
+                },
+                timeout=600,
+            )
+            if resp.status_code not in (200, 201):
+                self.logger.warn(
+                    "meta",
+                    f"github reel host failed [{resp.status_code}]: {resp.text[:200]}",
+                )
+                return None
+
+            body = resp.json()
+            sha = body.get("content", {}).get("sha", "")
+            if not sha:
+                self.logger.warn("meta", "github reel host returned no content sha")
+                return None
+
+            self._pending_github_reel_cleanup = {
+                "owner": owner,
+                "repo": repo_name,
+                "path": path,
+                "branch": branch,
+                "sha": sha,
+                "token": token,
+            }
+            url = f"https://raw.githubusercontent.com/{owner}/{repo_name}/{branch}/{path}"
+            self.logger.info(f"meta | reel public URL ready (github): {url}")
+            return url
+        except requests.RequestException as exc:
+            self.logger.warn("meta", f"github reel host upload failed: {exc}")
+            return None
+
+    def _ensure_github_ci_branch(
+        self, token: str, owner: str, repo_name: str, branch: str
+    ) -> None:
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        ref_url = (
+            f"https://api.github.com/repos/{owner}/{repo_name}/git/ref/heads/{branch}"
+        )
+        resp = requests.get(ref_url, headers=headers, timeout=30)
+        if resp.status_code == 200:
+            return
+        if resp.status_code != 404:
+            self.logger.warn(
+                "meta",
+                f"github branch check failed [{resp.status_code}]: {resp.text[:120]}",
+            )
+            return
+
+        repo_resp = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo_name}",
+            headers=headers,
+            timeout=30,
+        )
+        if repo_resp.status_code != 200:
+            return
+        default_branch = repo_resp.json().get("default_branch", "master")
+        base_resp = requests.get(
+            f"https://api.github.com/repos/{owner}/{repo_name}/git/ref/heads/{default_branch}",
+            headers=headers,
+            timeout=30,
+        )
+        if base_resp.status_code != 200:
+            return
+        base_sha = base_resp.json().get("object", {}).get("sha", "")
+        if not base_sha:
+            return
+
+        create_resp = requests.post(
+            f"https://api.github.com/repos/{owner}/{repo_name}/git/refs",
+            headers=headers,
+            json={"ref": f"refs/heads/{branch}", "sha": base_sha},
+            timeout=30,
+        )
+        if create_resp.status_code not in (200, 201):
+            self.logger.warn(
+                "meta",
+                f"github branch create failed [{create_resp.status_code}]: "
+                f"{create_resp.text[:120]}",
+            )
+
+    def _cleanup_github_reel_host(self) -> None:
+        info = self._pending_github_reel_cleanup
+        self._pending_github_reel_cleanup = None
+        if not info:
+            return
+
+        owner = info["owner"]
+        repo_name = info["repo"]
+        path = info["path"]
+        headers = {
+            "Authorization": f"Bearer {info['token']}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        }
+        try:
+            resp = requests.delete(
+                f"https://api.github.com/repos/{owner}/{repo_name}/contents/{path}",
+                headers=headers,
+                json={
+                    "message": "ci: remove temporary Instagram reel upload",
+                    "sha": info["sha"],
+                    "branch": info["branch"],
+                },
+                timeout=60,
+            )
+            if resp.status_code in (200, 204):
+                self.logger.info("meta | removed temporary github reel host file")
+            else:
+                self.logger.warn(
+                    "meta",
+                    f"github reel cleanup failed [{resp.status_code}]: {resp.text[:120]}",
+                )
+        except requests.RequestException as exc:
+            self.logger.warn("meta", f"github reel cleanup failed: {exc}")
+
+    def _host_reel_via_catbox(
+        self, video_path: Path, *, userhash: str | None
+    ) -> str | None:
+        label = "catbox+hash" if userhash else "catbox"
+        data: dict[str, str] = {"reqtype": "fileupload"}
+        if userhash:
+            data["userhash"] = userhash
+
         try:
             with open(video_path, "rb") as handle:
                 resp = requests.post(
                     "https://catbox.moe/user/api.php",
-                    data={"reqtype": "fileupload"},
+                    data=data,
                     files={
                         "fileToUpload": (
                             video_path.name,
@@ -319,14 +495,14 @@ class MetaScheduler:
                 )
             if resp.status_code == 200 and resp.text.strip().startswith("http"):
                 url = resp.text.strip()
-                self.logger.info(f"meta | reel public URL ready: {url}")
+                self.logger.info(f"meta | reel public URL ready ({label}): {url}")
                 return url
             self.logger.warn(
                 "meta",
-                f"catbox reel host failed [{resp.status_code}]: {resp.text[:200]}",
+                f"{label} reel host failed [{resp.status_code}]: {resp.text[:200]}",
             )
         except requests.RequestException as exc:
-            self.logger.warn("meta", f"public reel host upload failed: {exc}")
+            self.logger.warn("meta", f"{label} reel host upload failed: {exc}")
         return None
 
     def _init_reel_upload_session(

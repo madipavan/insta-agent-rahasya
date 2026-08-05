@@ -180,6 +180,75 @@ class MetaScheduler:
         del publish_at
         self._validate_reel_for_upload(video_path)
 
+        public_url = self._host_reel_publicly(video_path)
+        if public_url:
+            try:
+                return self._create_reel_container_via_video_url(
+                    public_url,
+                    caption,
+                    cover_url=cover_url,
+                )
+            except (requests.RequestException, RuntimeError) as exc:
+                self.logger.warn(
+                    "meta",
+                    f"video_url reel upload failed ({exc}) — trying rupload binary",
+                )
+
+        return self._create_reel_container_via_rupload(
+            video_path,
+            caption,
+            cover_url=cover_url,
+        )
+
+    def _create_reel_container_via_video_url(
+        self,
+        video_url: str,
+        caption: str,
+        *,
+        cover_url: str | None = None,
+    ) -> str:
+        """Meta fetches the reel from a third-party public URL (bypasses rupload.facebook.com)."""
+        use_cover = cover_url
+        for attempt in range(2):
+            params: dict[str, str] = {
+                "access_token": self.access_token,
+                "media_type": "REELS",
+                "video_url": video_url,
+                "caption": caption[:2200],
+                "share_to_feed": "true",
+            }
+            if use_cover:
+                params["cover_url"] = use_cover
+
+            resp = requests.post(
+                f"{self.GRAPH_URL}/{self.ig_user_id}/media",
+                params=params,
+                timeout=120,
+            )
+            if resp.status_code >= 400:
+                self._log_api_error("reel container video_url", resp)
+                if use_cover and attempt == 0:
+                    self.logger.warn(
+                        "meta",
+                        "reel video_url with cover failed — retrying without cover",
+                    )
+                    use_cover = None
+                    continue
+                resp.raise_for_status()
+            container_id = resp.json()["id"]
+            self.logger.info(
+                f"Reel container created via video_url: {container_id} ({video_url[:80]})"
+            )
+            return container_id
+        raise RuntimeError("reel video_url container creation failed")
+
+    def _create_reel_container_via_rupload(
+        self,
+        video_path: Path,
+        caption: str,
+        *,
+        cover_url: str | None = None,
+    ) -> str:
         use_cover = cover_url
         container_id: str | None = None
         upload_url: str | None = None
@@ -212,6 +281,53 @@ class MetaScheduler:
             self._log_upload_bytes_transferred(container_id)
             raise RuntimeError(f"reel video upload failed: {exc}") from exc
         return container_id
+
+    def _host_reel_publicly(self, video_path: Path) -> str | None:
+        """
+        Upload reel bytes to a third-party host so Meta can fetch via video_url.
+
+        Meta-hosted Page video URLs are rejected; catbox and similar external hosts work.
+        rupload.facebook.com binary upload is unreliable (ProcessingFailedError at offset 0).
+        """
+        import os
+
+        if os.getenv("META_REEL_SKIP_PUBLIC_HOST", "").strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        ):
+            return None
+
+        size = video_path.stat().st_size
+        self.logger.info(
+            f"meta | hosting reel for video_url upload ({size} bytes, {video_path.name})"
+        )
+
+        try:
+            with open(video_path, "rb") as handle:
+                resp = requests.post(
+                    "https://catbox.moe/user/api.php",
+                    data={"reqtype": "fileupload"},
+                    files={
+                        "fileToUpload": (
+                            video_path.name,
+                            handle,
+                            "video/mp4",
+                        ),
+                    },
+                    timeout=600,
+                )
+            if resp.status_code == 200 and resp.text.strip().startswith("http"):
+                url = resp.text.strip()
+                self.logger.info(f"meta | reel public URL ready: {url}")
+                return url
+            self.logger.warn(
+                "meta",
+                f"catbox reel host failed [{resp.status_code}]: {resp.text[:200]}",
+            )
+        except requests.RequestException as exc:
+            self.logger.warn("meta", f"public reel host upload failed: {exc}")
+        return None
 
     def _init_reel_upload_session(
         self,

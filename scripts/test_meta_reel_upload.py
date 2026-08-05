@@ -87,7 +87,7 @@ def main() -> None:
             "Rahasya upload test — ignore",
             cover_url=None,
         )
-        print(f"UPLOAD OK container={container_id}")
+        print(f"UPLOAD OK container={container_id} (video_url or rupload)")
 
 
 if __name__ == "__main__":

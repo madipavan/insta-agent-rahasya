@@ -49,6 +49,8 @@ class MetaScheduler:
 
     POLL_INTERVAL_SEC = 5
     POLL_MAX_ATTEMPTS = 60
+    SINGLE_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
+    CHUNK_SIZE_BYTES = 4 * 1024 * 1024
 
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
         self.config = config
@@ -176,28 +178,47 @@ class MetaScheduler:
         publish_at: datetime | None = None,
     ) -> str:
         del publish_at
-        last_error: Exception | None = None
-        for attempt, use_cover in enumerate((bool(cover_url), False), start=1):
+        self._validate_reel_for_upload(video_path)
+
+        use_cover = cover_url
+        container_id: str | None = None
+        upload_url: str | None = None
+        for attempt in range(2):
             try:
-                return self._create_reel_container_once(
-                    video_path, caption, cover_url if use_cover else None
+                container_id, upload_url = self._init_reel_upload_session(
+                    caption,
+                    cover_url=use_cover,
                 )
+                break
             except (requests.RequestException, RuntimeError) as exc:
-                last_error = exc
-                if attempt == 1 and cover_url:
-                    self.logger.warn("meta", f"reel upload with cover failed ({exc}) — retrying without cover")
+                if use_cover and attempt == 0:
+                    self.logger.warn(
+                        "meta",
+                        f"reel container with cover failed ({exc}) — retrying without cover",
+                    )
+                    use_cover = None
                     continue
                 raise
-        if last_error:
-            raise last_error
-        raise RuntimeError("reel container creation failed")
+        if not container_id or not upload_url:
+            raise RuntimeError("reel container creation failed")
 
-    def _create_reel_container_once(
+        try:
+            self._resumable_upload_binary(
+                container_id,
+                video_path,
+                upload_url=upload_url,
+            )
+        except (requests.RequestException, RuntimeError) as exc:
+            self._log_upload_bytes_transferred(container_id)
+            raise RuntimeError(f"reel video upload failed: {exc}") from exc
+        return container_id
+
+    def _init_reel_upload_session(
         self,
-        video_path: Path,
         caption: str,
+        *,
         cover_url: str | None,
-    ) -> str:
+    ) -> tuple[str, str]:
         params: dict[str, str] = {
             "access_token": self.access_token,
             "media_type": "REELS",
@@ -220,9 +241,20 @@ class MetaScheduler:
         container_id = body["id"]
         upload_url = body.get("uri") or f"{self.RUPLOAD_URL}/{container_id}"
         self.logger.info(f"Reel container created: {container_id}")
+        return container_id, upload_url
 
-        self._resumable_upload_binary(container_id, video_path, upload_url=upload_url)
-        return container_id
+    def _create_reel_container_once(
+        self,
+        video_path: Path,
+        caption: str,
+        cover_url: str | None,
+    ) -> str:
+        """Backward-compatible: create container and upload video."""
+        return self._create_reel_container(
+            video_path,
+            caption,
+            cover_url=cover_url,
+        )
 
     def _upload_video_to_container(
         self, container_id: str, file_path: Path, upload_url: str | None = None
@@ -246,64 +278,235 @@ class MetaScheduler:
             )
 
         target_url = upload_url or f"{self.RUPLOAD_URL}/{container_id}"
-        chunk_size = 4 * 1024 * 1024
-        offset = 0
-        with open(file_path, "rb") as handle:
-            while offset < file_size:
-                chunk = handle.read(min(chunk_size, file_size - offset))
-                if not chunk:
-                    break
-                headers = {
-                    "Authorization": f"OAuth {self.access_token}",
-                    "offset": str(offset),
-                    "file_size": str(file_size),
-                    "Content-Type": "application/octet-stream",
-                }
-                resp = requests.post(
-                    target_url,
-                    headers=headers,
-                    data=chunk,
-                    timeout=600,
-                )
-                if resp.status_code >= 400:
-                    self._log_api_error("rupload binary", resp)
-                    raise RuntimeError(
-                        f"rupload failed at offset {offset} ({resp.status_code}): {resp.text[:500]}"
-                    )
-                offset += len(chunk)
+        data = file_path.read_bytes()
 
-        self.logger.info(f"Uploaded {file_path.name} ({file_size} bytes) via binary rupload")
+        if file_size <= self.SINGLE_UPLOAD_MAX_BYTES:
+            try:
+                self._rupload_post_chunk(target_url, data, offset=0, file_size=file_size)
+                self.logger.info(
+                    f"Uploaded {file_path.name} ({file_size} bytes) via single-request rupload"
+                )
+                return
+            except RuntimeError:
+                transferred = self._query_bytes_transferred(container_id)
+                if transferred and 0 < transferred < file_size:
+                    self.logger.warn(
+                        "meta",
+                        f"single-request rupload stalled at {transferred}/{file_size} — resuming chunked",
+                    )
+                    self._rupload_chunked(
+                        target_url,
+                        data,
+                        file_size=file_size,
+                        start_offset=transferred,
+                    )
+                    self.logger.info(
+                        f"Uploaded {file_path.name} ({file_size} bytes) via resumed chunked rupload"
+                    )
+                    return
+                raise
+
+        self._rupload_chunked(target_url, data, file_size=file_size)
+        self.logger.info(
+            f"Uploaded {file_path.name} ({file_size} bytes) via chunked rupload "
+            f"({self.CHUNK_SIZE_BYTES // 1024}KB chunks)"
+        )
+
+    def _rupload_chunked(
+        self,
+        target_url: str,
+        data: bytes,
+        *,
+        file_size: int,
+        start_offset: int = 0,
+        chunk_size: int | None = None,
+    ) -> None:
+        chunk_size = chunk_size or self.CHUNK_SIZE_BYTES
+        offset = start_offset
+        while offset < file_size:
+            chunk = data[offset:offset + chunk_size]
+            if not chunk:
+                break
+            self._rupload_post_chunk(
+                target_url,
+                chunk,
+                offset=offset,
+                file_size=file_size,
+            )
+            offset += len(chunk)
+
+    def _rupload_post_chunk(
+        self,
+        target_url: str,
+        chunk: bytes,
+        *,
+        offset: int,
+        file_size: int,
+    ) -> None:
+        headers = {
+            "Authorization": f"OAuth {self.access_token}",
+            "offset": str(offset),
+            "file_size": str(file_size),
+            "Content-Type": "application/octet-stream",
+        }
+        resp = requests.post(
+            target_url,
+            headers=headers,
+            data=chunk,
+            timeout=600,
+        )
+        if resp.status_code not in (200, 206):
+            self._log_api_error("rupload binary", resp)
+            raise RuntimeError(
+                f"rupload failed at offset {offset} ({resp.status_code}): {resp.text[:500]}"
+            )
+
+    def _validate_reel_for_upload(self, video_path: Path) -> None:
+        """ffprobe check — log specs; warn if outside typical Instagram reel constraints."""
+        import json
+        import subprocess
+
+        from src.utils.ffmpeg_path import get_ffmpeg_exe
+
+        result = subprocess.run(
+            [
+                get_ffmpeg_exe(),
+                "-hide_banner",
+                "-i",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        stderr = result.stderr or ""
+        summary_parts: list[str] = [
+            f"size={video_path.stat().st_size}",
+            f"size_mb={video_path.stat().st_size / (1024 * 1024):.2f}",
+        ]
+        for line in stderr.splitlines():
+            if "Video:" in line or "Audio:" in line or "Duration:" in line:
+                summary_parts.append(line.strip())
+
+        probe = subprocess.run(
+            [
+                get_ffmpeg_exe(),
+                "-hide_banner",
+                "-print_format",
+                "json",
+                "-show_streams",
+                "-show_format",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode == 0 and probe.stdout:
+            try:
+                info = json.loads(probe.stdout)
+                for stream in info.get("streams", []):
+                    if stream.get("codec_type") == "video":
+                        summary_parts.append(
+                            f"v={stream.get('codec_name')} "
+                            f"{stream.get('width')}x{stream.get('height')} "
+                            f"profile={stream.get('profile')} "
+                            f"fps={stream.get('r_frame_rate')}"
+                        )
+                    elif stream.get("codec_type") == "audio":
+                        summary_parts.append(
+                            f"a={stream.get('codec_name')} "
+                            f"rate={stream.get('sample_rate')}"
+                        )
+            except json.JSONDecodeError:
+                pass
+
+        self.logger.info("meta | reel upload spec: " + " | ".join(summary_parts))
+
+    def _query_bytes_transferred(self, container_id: str) -> int | None:
+        try:
+            resp = requests.get(
+                f"{self.GRAPH_URL}/{container_id}",
+                params={
+                    "access_token": self.access_token,
+                    "fields": "status_code,video_status",
+                },
+                timeout=30,
+            )
+            if resp.status_code != 200:
+                return None
+            vs = resp.json().get("video_status") or {}
+            upload_phase = vs.get("uploading_phase") or {}
+            transferred = upload_phase.get("bytes_transferred")
+            if transferred is None:
+                return None
+            return int(transferred)
+        except (requests.RequestException, TypeError, ValueError):
+            return None
+
+    def _log_upload_bytes_transferred(self, container_id: str) -> None:
+        transferred = self._query_bytes_transferred(container_id)
+        if transferred is not None:
+            self.logger.warn(
+                "meta",
+                f"rupload progress bytes_transferred={transferred}",
+            )
 
     def _prepare_reel_for_instagram(self, video_path: Path) -> Path:
-        """Re-encode to H.264/AAC + faststart and enforce Instagram's 90s reel cap."""
+        """Re-encode to H.264/AAC + faststart and enforce Instagram reel size/duration caps."""
         import subprocess
         import tempfile
 
         from src.utils.ffmpeg_path import get_ffmpeg_exe, get_media_duration
 
         max_sec = float(getattr(self.config.video, "instagram_max_sec", 90))
-        out = Path(tempfile.mkstemp(suffix="_ig.mp4")[1])
-        cmd = [
-            get_ffmpeg_exe(), "-y",
-            "-i", str(video_path),
-            "-t", str(max_sec),
-            "-vf",
-            "scale=1080:1920:force_original_aspect_ratio=decrease,"
-            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2",
-            "-c:v", "libx264", "-preset", "fast", "-crf", "24",
-            "-profile:v", "main", "-level", "4.0", "-pix_fmt", "yuv420p",
-            "-r", "30", "-vsync", "cfr", "-g", "60", "-keyint_min", "60",
-            "-maxrate", "2000k", "-bufsize", "4000k",
-            "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
-            "-movflags", "+faststart",
-            str(out),
+        max_bytes = int(
+            getattr(self.config.video, "instagram_max_upload_mb", 12) * 1024 * 1024
+        )
+        encode_profiles = [
+            ("24", "2000k", "4000k"),
+            ("26", "1500k", "3000k"),
+            ("28", "1200k", "2400k"),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True)
-        if result.returncode != 0:
-            raise RuntimeError(f"Instagram video prep failed: {result.stderr[-800:]}")
+
+        out = Path(tempfile.mkstemp(suffix="_ig.mp4")[1])
+        ffmpeg = get_ffmpeg_exe()
+        vf = (
+            "scale=1080:1920:force_original_aspect_ratio=decrease,"
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
+        )
+
+        for crf, maxrate, bufsize in encode_profiles:
+            cmd = [
+                ffmpeg, "-y",
+                "-i", str(video_path),
+                "-t", str(max_sec),
+                "-vf", vf,
+                "-c:v", "libx264", "-preset", "fast", "-crf", crf,
+                "-profile:v", "main", "-level", "4.0", "-pix_fmt", "yuv420p",
+                "-r", "30", "-vsync", "cfr", "-g", "60", "-keyint_min", "60",
+                "-maxrate", maxrate, "-bufsize", bufsize,
+                "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+                "-movflags", "+faststart",
+                str(out),
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"Instagram video prep failed: {result.stderr[-800:]}")
+            if out.stat().st_size <= max_bytes:
+                break
+            self.logger.warn(
+                "meta",
+                f"prepared reel {out.stat().st_size} bytes > {max_bytes} — retrying lower bitrate",
+            )
+
         final_dur = get_media_duration(out)
+        final_size = out.stat().st_size
+        if final_size > max_bytes:
+            self.logger.warn(
+                "meta",
+                f"prepared reel still {final_size} bytes after bitrate retries (cap {max_bytes})",
+            )
         self.logger.info(
-            f"meta | prepared reel for upload: {out.stat().st_size} bytes, {final_dur:.1f}s"
+            f"meta | prepared reel for upload: {final_size} bytes, {final_dur:.1f}s"
         )
         return out
 

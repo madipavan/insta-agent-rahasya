@@ -16,7 +16,9 @@ from src.review.telegram import TelegramNotifier
 from src.scheduler.factory import get_scheduler
 
 
-def approve_and_post(config: AppConfig, bundle_id: str, logger: PipelineLogger | None = None) -> str:
+def approve_and_post(
+    config: AppConfig, bundle_id: str, logger: PipelineLogger | None = None
+) -> str | None:
     """Approve a review bundle and upload reel + carousel to Instagram."""
     logger = logger or PipelineLogger(config.path("logs_dir"))
     db = Database(config.path("db_path"))
@@ -57,7 +59,7 @@ def approve_and_post(config: AppConfig, bundle_id: str, logger: PipelineLogger |
         )
         logger.fail("approve", msg)
         telegram.send_error(msg)
-        return post_id
+        return None
 
     bundle = db.get_review_bundle(bundle_id)
     if bundle:
@@ -117,7 +119,9 @@ def publish_pending(config: AppConfig, logger: PipelineLogger | None = None) -> 
 
     bundle_id = eligible[0]["bundle_id"]
     logger.start("publish", bundle_id)
-    approve_and_post(config, bundle_id, logger=logger)
+    post_id = approve_and_post(config, bundle_id, logger=logger)
+    if not post_id:
+        return None
     return bundle_id
 
 

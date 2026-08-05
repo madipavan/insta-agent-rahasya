@@ -120,9 +120,9 @@ class ReelAssembler:
                 "-y", "-i", str(combined), "-i", str(final_audio),
                 "-t", str(max_reel_duration_sec(self.config)),
                 "-c:v", "libx264", "-preset", "fast", "-crf", "23",
-                "-pix_fmt", "yuv420p", "-profile:v", "high", "-level", "4.0",
-                "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+                "-pix_fmt", "yuv420p", "-profile:v", "main", "-level", "4.0",
                 "-movflags", "+faststart",
+                "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
                 "-map", "0:v:0", "-map", "1:a:0", "-shortest",
                 str(output_path),
             ])
@@ -220,6 +220,8 @@ class ReelAssembler:
 
         self._run_ffmpeg([
             "-y", "-i", str(input_video), "-vf", vf,
+            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+            "-pix_fmt", "yuv420p", "-profile:v", "main", "-level", "4.0",
             "-c:a", "copy", str(output_video),
         ])
 

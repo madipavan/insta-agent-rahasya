@@ -32,9 +32,9 @@ def cmd_publish(args: argparse.Namespace) -> None:
         print(f"Published: {bundle_id}")
     else:
         if getattr(args, "now", False):
-            print("Nothing to publish (no bundles in pending_publish queue).")
-        else:
-            print("Nothing to publish yet (waiting for min_publish_delay_hours).")
+            print("Publish failed or nothing in pending_publish queue.")
+            sys.exit(1)
+        print("Nothing to publish yet (waiting for min_publish_delay_hours).")
 
 
 def cmd_run(args: argparse.Namespace) -> None:
@@ -47,7 +47,8 @@ def cmd_run(args: argparse.Namespace) -> None:
         if published:
             print(f"Published: {published}")
         else:
-            print("Generated but nothing to publish (bundle may already be posted).")
+            print("Generate succeeded but publish failed or nothing to publish.")
+            sys.exit(1)
     print(f"Pipeline complete. Bundle: {bundle_id}")
 
 

@@ -24,15 +24,22 @@ llm_model_openai: gpt-4o
 post_time: "19:30"
 timezone: "Asia/Kolkata"
 
-# Voice: fish-audio (cloned narrator) with edge-tts fallback
-voice_provider: fish-audio
-voice_name: Rahasya Narrator
+# Voice: Sarvam AI Bulbul v3 (Hindi suspense narrator) with edge-tts fallback
+voice_provider: sarvam
+voice_name: Priya
 edge_tts_voice: "hi-IN-SwaraNeural"
 voice_language: hindi
-# ElevenLabs (optional — Tarini needs paid plan; premade female e.g. Jessica: cgSgspJ2msm6clMCkdW9)
-voice_id: ""
-elevenlabs_fallback: false
-# Fish Audio — cloned Hindi narrator (https://fish.audio/app/api-keys)
+# ElevenLabs (optional — library voices need paid plan for API)
+voice_id: "kZKm3BYbXfahOLAxYZG0"
+elevenlabs_fallback: true
+# Sarvam AI — https://dashboard.sarvam.ai (₹100 free credits on signup)
+sarvam_model: bulbul:v3
+sarvam_speaker: priya
+sarvam_language_code: hi-IN
+sarvam_pace: 0.78
+sarvam_temperature: 0.75
+sarvam_fallback: true
+# Fish Audio (optional — https://fish.audio/app/api-keys)
 fish_audio_model: s2.1-pro-free
 fish_audio_voice_id: "bc2253b3f34e4b769cb87636db31a2c7"
 fish_audio_speed: 0.80

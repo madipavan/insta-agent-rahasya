@@ -12,6 +12,7 @@ from src.pipeline.logger import PipelineLogger
 from src.voiceover.edge_tts import EdgeTTSVoiceover
 from src.voiceover.elevenlabs import ElevenLabsVoiceover
 from src.voiceover.fish_audio import FishAudioVoiceover
+from src.voiceover.sarvam import SarvamVoiceover
 
 
 class VoiceoverProvider(Protocol):
@@ -38,7 +39,7 @@ class FallbackVoiceover:
             return self.primary.generate(text, output_path)
         except requests.HTTPError as exc:
             code = exc.response.status_code if exc.response is not None else None
-            if code in (401, 402, 429):
+            if code in (401, 402, 403, 429):
                 detail = str(exc) if exc.args else f"HTTP {code}"
                 self.logger.warn(
                     "voiceover",
@@ -64,6 +65,12 @@ def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> Voiceov
         if config.fish_audio_fallback:
             return FallbackVoiceover(fish, fallback, logger, "fish-audio")
         return fish
+
+    if provider == "sarvam":
+        sarvam = SarvamVoiceover(config, logger)
+        if config.sarvam_fallback:
+            return FallbackVoiceover(sarvam, fallback, logger, "sarvam")
+        return sarvam
 
     elevenlabs = ElevenLabsVoiceover(config, logger)
     if provider in ("elevenlabs", "auto") and config.elevenlabs_api_key and config.voice_id:

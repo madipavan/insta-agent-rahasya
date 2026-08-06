@@ -79,10 +79,4 @@ def apply_checkpoint_to_db(db, data_dir: Path, novel_id: int, novel_title: str) 
         if cp.novel_title and cp.novel_title.lower() != novel_title.lower():
             return 0
 
-    applied = 0
-    for ep_num in cp.completed_episodes:
-        if db.set_episode_status_by_num(novel_id, ep_num, "generated"):
-            applied += 1
-    if applied:
-        db.refresh_novel_current_episode(novel_id)
-    return applied
+    return db.reconcile_episodes_to_checkpoint(novel_id, cp.completed_episodes)

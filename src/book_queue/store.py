@@ -316,6 +316,50 @@ class Database:
             )
             return cur.rowcount > 0
 
+    def reconcile_episodes_to_checkpoint(
+        self, novel_id: int, completed_episodes: list[int]
+    ) -> int:
+        """Align episode rows and post_log with checkpoint.json (fixes stale CI state)."""
+        if not completed_episodes:
+            return 0
+
+        completed = sorted({int(ep) for ep in completed_episodes})
+        max_ep = max(completed)
+        placeholders = ",".join("?" * len(completed))
+        applied = 0
+
+        with self._connect() as conn:
+            for ep_num in completed:
+                cur = conn.execute(
+                    """
+                    UPDATE episodes SET status = 'generated'
+                    WHERE novel_id = ? AND episode_num = ?
+                    """,
+                    (novel_id, ep_num),
+                )
+                applied += cur.rowcount
+
+            conn.execute(
+                f"""
+                UPDATE episodes SET status = 'pending'
+                WHERE novel_id = ? AND episode_num NOT IN ({placeholders})
+                """,
+                (novel_id, *completed),
+            )
+            conn.execute(
+                f"""
+                DELETE FROM post_log
+                WHERE novel_id = ? AND episode_num NOT IN ({placeholders})
+                """,
+                (novel_id, *completed),
+            )
+            conn.execute(
+                "UPDATE novels SET current_episode = ? WHERE id = ?",
+                (max_ep, novel_id),
+            )
+
+        return applied
+
     def refresh_novel_current_episode(self, novel_id: int) -> None:
         with self._connect() as conn:
             row = conn.execute(

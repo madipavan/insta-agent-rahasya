@@ -1,80 +1,74 @@
-# cron-job.org setup (2 reels per day)
+# cron-job.org setup (cloud only — 2 reels per day)
 
-Each trigger runs the **full pipeline**: generate reel → publish to Instagram immediately.
+Each trigger runs the **full pipeline** on GitHub Actions: generate reel → publish to Instagram.
 
-GitHub `schedule` is not used (unreliable). Use [cron-job.org](https://cron-job.org) (free).
+Your PC can stay off. No local scheduler needed.
 
-## 1. GitHub token
+## Fastest setup (one command)
 
-1. GitHub → **Settings** → **Developer settings** → **Personal access tokens**
-2. Repo: `madipavan/insta-agent-rahasya`
-3. Permission: **Actions: Read and write**
-4. Copy token (`github_pat_...` or `ghp_...`)
+1. Create a **GitHub PAT**: Settings → Developer settings → Personal access tokens → scopes **repo** + **workflow**
+2. Sign up at [cron-job.org](https://cron-job.org) → Console → **Settings** → copy **API key**
+3. Add both to `.env` (not committed):
+   ```
+   GITHUB_TOKEN=ghp_...
+   CRONJOB_API_KEY=...
+   ```
+4. Run once:
+   ```powershell
+   cd D:\insta_auto_page\Rahasya.exe
+   .\venv\Scripts\python.exe scripts\setup_cron_jobs.py
+   ```
 
-## 2. Two cron jobs — same body, different times
+This creates two cloud cron jobs:
 
-Set cron-job.org account timezone to **Asia/Kolkata**.
+| Job | Time (IST) |
+|-----|------------|
+| Rahasya Morning Reel | 8:00 AM |
+| Rahasya Evening Reel | 7:30 PM |
 
-| Job | Time (IST) | Cron expression |
-|-----|------------|-----------------|
-| **Morning reel** | 8:00 AM | `0 8 * * *` |
-| **Evening reel** | 7:30 PM | `30 19 * * *` |
+Each run → `python main.py run --publish-now` on GitHub → **1 reel posted**.
 
-Both jobs use the **same** settings below.
+## Manual setup (cron-job.org website)
 
-## 3. cron-job.org settings (both jobs)
+If you prefer the UI, create **two** jobs with the same body, different times.
 
-- **URL:**
-  ```
-  https://api.github.com/repos/madipavan/insta-agent-rahasya/actions/workflows/daily-rahasya.yml/dispatches
-  ```
-- **Method:** `POST`
-- **Headers:**
-  ```
-  Accept: application/vnd.github+json
-  Authorization: Bearer YOUR_GITHUB_TOKEN
-  Content-Type: application/json
-  ```
-- **Body:**
-  ```json
-  {
-    "ref": "master",
-    "inputs": {
-      "skip_episodes": "",
-      "use_repo_state": "false"
-    }
-  }
-  ```
-
-## 4. What each run does
-
+**URL:**
 ```
-cron trigger → python main.py run --publish-now
-             → next episode generated + posted to Instagram
+https://api.github.com/repos/madipavan/insta-agent-rahasya/actions/workflows/daily-rahasya.yml/dispatches
 ```
 
-Morning run → ep 3 (example)  
-Evening run → ep 4  
-= **2 reels per day**
+**Method:** POST
 
-## 5. Reset pipeline
+**Headers:**
+```
+Accept: application/vnd.github+json
+Authorization: Bearer YOUR_GITHUB_TOKEN
+Content-Type: application/json
+X-GitHub-Api-Version: 2022-11-28
+```
 
-Trigger once with:
-
+**Body:**
 ```json
 {
   "ref": "master",
   "inputs": {
     "skip_episodes": "",
-    "use_repo_state": "true"
+    "use_repo_state": "false"
   }
 }
 ```
 
-Or manually in GitHub Actions → **Run workflow** → check **use_repo_state**.
+**Schedules** (timezone: Asia/Kolkata):
 
-## 6. Test
+| Job | Cron |
+|-----|------|
+| Morning | `0 8 * * *` |
+| Evening | `30 19 * * *` |
 
-1. cron-job.org → **Test run**
-2. GitHub → **Actions** → watch logs
-3. Confirm reel on Instagram
+## Reset pipeline
+
+Trigger once with `"use_repo_state": "true"` in the body, or run workflow manually in GitHub Actions with that checkbox.
+
+## Test
+
+cron-job.org → job → **Run now** → check GitHub **Actions** tab.

@@ -21,8 +21,11 @@ GitHub → your repo → **Settings** → **Secrets and variables** → **Action
 
 | Secret | Required | Purpose |
 |--------|----------|---------|
-| `GROQ_API_KEY` | Yes | Script generation |
-| `PEXELS_API_KEY` | Yes | Stock footage |
+| `GROQ_API_KEY` or `GEMINI_API_KEY` | Yes (one LLM) | Script generation |
+| `FISH_AUDIO_API_KEY` | Yes (voice) | Primary Hindi TTS (fish-audio) |
+| `SARVAM_API_KEY` | Optional | Voice fallback if Fish fails |
+| `PEXELS_API_KEY` | Yes (stock) | Stock footage |
+| `PIXABAY_API_KEY` | Optional | Extra stock source |
 | `META_ACCESS_TOKEN` | For auto-post | Instagram scheduling |
 | `META_IG_USER_ID` | For auto-post | Instagram account ID |
 | `META_PAGE_ID` | For auto-post | Facebook Page (cover upload) |
@@ -84,4 +87,5 @@ Config: `config.yaml` → `post_time: "19:30"`, `review_required: false`
 | `GROQ_API_KEY` missing | Add secret in repo settings |
 | Meta not posting | Add META_* secrets; run `python main.py meta-test` locally first |
 | Started at ep 1 | Bootstrap `data/rahasya.db` (step 4) |
+| `FISH_AUDIO_API_KEY` missing | Add secret from https://fish.audio/app/api-keys |
 | Hindi font error | Noto fonts are in `assets/fonts/` — workflow installs system fonts too |

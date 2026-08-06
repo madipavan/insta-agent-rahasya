@@ -39,7 +39,10 @@ jobs:
       ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+      FISH_AUDIO_API_KEY: ${{ secrets.FISH_AUDIO_API_KEY }}
+      SARVAM_API_KEY: ${{ secrets.SARVAM_API_KEY }}
       PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+      PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
       META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN }}
       META_IG_USER_ID: ${{ secrets.META_IG_USER_ID }}
       META_PAGE_ID: ${{ secrets.META_PAGE_ID }}
@@ -62,8 +65,13 @@ jobs:
             echo "::error::Set at least one LLM key: GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY"
             exit 1
           fi
-          if [ -z "$PEXELS_API_KEY" ]; then
-            echo "::warning::PEXELS_API_KEY secret is missing — stock footage may fail"
+          if [ -z "$PEXELS_API_KEY" ] && [ -z "$PIXABAY_API_KEY" ]; then
+            echo "::warning::PEXELS_API_KEY and PIXABAY_API_KEY missing — stock footage may fail"
+          fi
+          if [ -z "$FISH_AUDIO_API_KEY" ] && [ -z "$SARVAM_API_KEY" ]; then
+            echo "::warning::FISH_AUDIO_API_KEY and SARVAM_API_KEY missing — voiceover will fall back to edge-tts"
+          elif [ -z "$FISH_AUDIO_API_KEY" ]; then
+            echo "::warning::FISH_AUDIO_API_KEY missing — primary fish-audio voice disabled"
           fi
 
       - name: Restore pipeline state

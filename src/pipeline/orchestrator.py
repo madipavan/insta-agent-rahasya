@@ -116,12 +116,18 @@ class Pipeline:
             )
 
             assets = self.novel_assets.ensure(context.novel, script.stock_keywords)
+            hook_for_thumb = ""
+            if script.on_screen_text:
+                hook_for_thumb = script.on_screen_text[0]
+            elif script.hook:
+                hook_for_thumb = script.hook
             thumbnail_path = self.novel_assets.episode_thumbnail(
                 context.novel,
                 context.episode.episode_num,
                 context.total_episodes,
                 work_dir / "thumbnail.png",
                 assets=assets,
+                hook_text=hook_for_thumb,
             )
 
             stock_paths = self.stock.resolve_visuals(script.stock_keywords, work_dir)

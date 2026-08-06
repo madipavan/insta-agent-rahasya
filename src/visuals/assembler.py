@@ -88,7 +88,12 @@ class ReelAssembler:
             segments = self.captions.generate(audio_path)
             if script.on_screen_text:
                 hook_segments = [
-                    CaptionSegment(script.on_screen_text[0], 0.0, min(3.0, main_dur))
+                    CaptionSegment(
+                        script.on_screen_text[0],
+                        0.0,
+                        min(3.0, main_dur),
+                        style="Hook",
+                    )
                 ]
                 segments = hook_segments + segments
 
@@ -125,13 +130,18 @@ class ReelAssembler:
 
             self._pad_audio(vo_for_mix, padded_audio, intro_dur, outro_dur)
 
-            final_audio = padded_audio
+            boosted_audio = tmp_dir / "boosted_audio.aac"
+            self._boost_voice(padded_audio, boosted_audio, self.config.video.voiceover_volume)
+
+            final_audio = boosted_audio
             if bgm_path and bgm_path.exists():
                 mixed = tmp_dir / "mixed_audio.aac"
                 vol = self.config.video.bgm_volume
-                self._mix_bgm(padded_audio, bgm_path, mixed, bgm_volume=vol)
+                self._mix_bgm(boosted_audio, bgm_path, mixed, bgm_volume=vol)
                 final_audio = mixed
-                self.logger.info(f"reel_assembly | BGM mixed at {vol:.0%}: {bgm_path.name}")
+                self.logger.info(
+                    f"reel_assembly | BGM at {vol:.0%}, voice at {self.config.video.voiceover_volume:.0%}"
+                )
 
             self._run_ffmpeg([
                 "-y", "-i", str(combined), "-i", str(final_audio),
@@ -232,8 +242,8 @@ class ReelAssembler:
             return
 
         ass_path = (tmp_dir or input_video.parent) / "captions.ass"
-        write_ass_subtitles(segments, ass_path, width=width, height=height)
-        vf = ass_filter_path(ass_path)
+        write_ass_subtitles(segments, ass_path, self.config, width=width, height=height)
+        vf = ass_filter_path(ass_path, self.config)
 
         self._run_ffmpeg([
             "-y", "-i", str(input_video), "-vf", vf,
@@ -250,8 +260,20 @@ class ReelAssembler:
             "-c:a", "aac", str(output_audio),
         ])
 
+    def _boost_voice(self, input_audio: Path, output_audio: Path, gain: float) -> None:
+        """Raise narration level so it sits clearly above BGM."""
+        if gain <= 0 or abs(gain - 1.0) < 0.02:
+            import shutil
+            shutil.copy(input_audio, output_audio)
+            return
+        self._run_ffmpeg([
+            "-y", "-i", str(input_audio),
+            "-af", f"volume={gain:.2f}",
+            "-c:a", "aac", str(output_audio),
+        ])
+
     def _mix_bgm(self, voiceover: Path, bgm: Path, output: Path, bgm_volume: float = 0.12) -> None:
-        """Mix novel BGM under voiceover at low volume."""
+        """Mix novel BGM under voiceover at low volume (voice already boosted)."""
         self._run_ffmpeg([
             "-y", "-i", str(voiceover), "-stream_loop", "-1", "-i", str(bgm),
             "-filter_complex",

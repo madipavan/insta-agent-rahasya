@@ -25,11 +25,15 @@ class BrandTemplates:
         return bool(_DEVANAGARI_RE.search(text))
 
     def _get_hindi_font(self, size: int, bold: bool = True) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        quote_font = self.config.resolve_asset(self.config.brand.hindi_quote_font)
+        caption_font = self.config.resolve_asset(self.config.brand.caption_font)
         bundled = self.config.resolve_asset(
             "assets/fonts/NotoSansDevanagari-Bold.ttf" if bold else "assets/fonts/NotoSansDevanagari-Regular.ttf"
         )
         regular = self.config.resolve_asset("assets/fonts/NotoSansDevanagari-Regular.ttf")
         candidates = [
+            quote_font,
+            caption_font,
             bundled,
             self.config.resolve_asset("assets/fonts/NotoSansDevanagari-Bold.ttf"),
             regular,
@@ -42,7 +46,7 @@ class BrandTemplates:
             if path.exists():
                 return ImageFont.truetype(str(path), size)
         raise FileNotFoundError(
-            "No Hindi font found. Expected assets/fonts/NotoSansDevanagari-Bold.ttf"
+            "No Hindi font found. Add Tiro or Anek fonts under assets/fonts/"
         )
 
     def _get_font(self, font_path: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -56,6 +60,13 @@ class BrandTemplates:
             if path.exists():
                 return ImageFont.truetype(str(path), size)
         return ImageFont.load_default()
+
+    def _get_caption_font(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        """Anek ExtraBold — same family as reel hook/caption overlays."""
+        path = self.config.resolve_asset(self.config.brand.caption_font)
+        if path.exists():
+            return ImageFont.truetype(str(path), size)
+        return self._get_hindi_font(size, bold=True)
 
     def _quote_font_for(
         self, text: str, size: int, *, bold: bool | None = None
@@ -260,16 +271,17 @@ class BrandTemplates:
         base_image_path: Path | None,
         width: int,
         height: int,
+        hook_text: str = "",
     ) -> Image.Image:
-        """Same novel art every episode — only EP number centered, no channel branding."""
+        """Episode cover — Bebas EP number + optional Hindi hook in Anek."""
         if base_image_path and base_image_path.exists():
             img = Image.open(base_image_path).convert("RGB").resize((width, height))
         else:
             img = self.create_gradient_fallback(width, height)
 
         accent = self._hex_to_rgb(self.config.brand.accent_color)
+        text_color = self._hex_to_rgb(self.config.brand.text_color)
 
-        # Subtle vignette so EP text pops
         overlay = Image.new("RGBA", (width, height), (0, 0, 0, 0))
         od = ImageDraw.Draw(overlay)
         od.rectangle([(0, 0), (width, height)], fill=(0, 0, 0, 60))
@@ -295,6 +307,28 @@ class BrandTemplates:
             stroke_width=5,
             stroke_fill=(0, 0, 0),
         )
+
+        hook = (hook_text or "").strip()
+        if hook:
+            hook_font = self._get_caption_font(52)
+            wrapped = textwrap.fill(hook, width=22)
+            hook_bbox = draw.multiline_textbbox(
+                (0, 0), wrapped, font=hook_font, align="center", spacing=8
+            )
+            hook_w = hook_bbox[2] - hook_bbox[0]
+            hook_h = hook_bbox[3] - hook_bbox[1]
+            hook_x = (width - hook_w) // 2
+            hook_y = min(height - hook_h - 120, band_bottom + 24)
+            draw.multiline_text(
+                (hook_x, hook_y),
+                wrapped,
+                font=hook_font,
+                fill=text_color,
+                align="center",
+                spacing=8,
+                stroke_width=3,
+                stroke_fill=(0, 0, 0),
+            )
 
         return img
 

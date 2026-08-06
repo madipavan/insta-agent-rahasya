@@ -5,6 +5,11 @@ brand:
   display_font: "assets/fonts/BebasNeue-Regular.ttf"
   body_font: "assets/fonts/Inter-Regular.ttf"
   quote_font: "C:/Windows/Fonts/georgiab.ttf"
+  caption_font: "assets/fonts/AnekDevanagari-ExtraBold.ttf"
+  hindi_quote_font: "assets/fonts/NotoSerifDevanagari-Regular.ttf"
+  caption_font_size: 52
+  hook_font_size: 58
+  caption_outline: 4
   watermark_text: "Rahasya.exe"
   logo_path: "assets/brand/logo.png"
   intro_duration_sec: 1.0
@@ -24,8 +29,8 @@ llm_model_openai: gpt-4o
 post_time: "19:30"
 timezone: "Asia/Kolkata"
 
-# Voice: Sarvam AI Bulbul v3 (Hindi suspense narrator) with edge-tts fallback
-voice_provider: sarvam
+# Voice: Fish Audio clone (primary) → Sarvam → edge-tts fallback
+voice_provider: fish-audio
 voice_name: Priya
 edge_tts_voice: "hi-IN-SwaraNeural"
 voice_language: hindi
@@ -68,7 +73,7 @@ min_publish_delay_hours: 20
 post_provider: meta
 
 discovery:
-  min_queue_size: 3
+  min_queue_size: 0
   batch_size: 5
 
 caption_template: |
@@ -102,7 +107,13 @@ video:
   clip_count: 4
   photo_count: 1
   artistic_stock: true
-  bgm_volume: 0.22
+  # Stock fetch order: local library → Pixabay → Pexels
+  stock_providers:
+    - local
+    - pixabay
+    - pexels
+  bgm_volume: 0.10
+  voiceover_volume: 1.35
   # Retention SFX mixed under voiceover (hook, cut whooshes, cliffhanger sting)
   sfx_enabled: true
   sfx_hook_volume: 0.35

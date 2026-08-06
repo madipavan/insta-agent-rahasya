@@ -58,6 +58,7 @@ class NovelAssetManager:
         total_episodes: int,
         output_path: Path,
         assets: NovelAssets | None = None,
+        hook_text: str = "",
     ) -> Path:
         assets = assets or self.ensure(novel)
         img = self.brand.create_episode_thumbnail(
@@ -67,6 +68,7 @@ class NovelAssetManager:
             base_image_path=assets.thumbnail_base,
             width=self.config.video.width,
             height=self.config.video.height,
+            hook_text=hook_text,
         )
         output_path.parent.mkdir(parents=True, exist_ok=True)
         img.save(output_path)

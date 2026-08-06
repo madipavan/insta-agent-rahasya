@@ -15,6 +15,7 @@ class CaptionSegment:
     text: str
     start: float
     end: float
+    style: str = "Default"
 
 
 class CaptionGenerator:

@@ -1,4 +1,4 @@
-"""Hybrid stock footage resolver — multiple videos + artistic photos."""
+"""Hybrid stock footage resolver — local library, Pixabay, and Pexels."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import random
 import subprocess
 import tempfile
 from pathlib import Path
+from typing import Callable
 
 import requests
 from PIL import Image
@@ -38,21 +39,31 @@ class StockResolver:
 
         video_count = self.config.video.clip_count
         photo_count = self.config.video.photo_count
-        self.logger.start("stock", f"{', '.join(clean_kw[:4])} | {video_count}v + {photo_count}p")
+        providers = [p.lower() for p in self.config.video.stock_providers]
+        self.logger.start(
+            "stock",
+            f"{', '.join(clean_kw[:4])} | {video_count}v + {photo_count}p | {'→'.join(providers)}",
+        )
 
         visuals: list[Path] = []
 
-        for keyword in clean_kw:
-            local = self._find_local(keyword)
-            if local and local not in visuals:
-                visuals.append(local)
-            if len(visuals) >= video_count:
-                break
+        if "local" in providers:
+            for keyword in clean_kw:
+                local = self._find_local(keyword)
+                if local and local not in visuals:
+                    visuals.append(local)
+                if len(visuals) >= video_count:
+                    break
+            if len(visuals) < video_count:
+                for path in self._find_local_any(video_count - len(visuals)):
+                    if path not in visuals:
+                        visuals.append(path)
 
-        if len(visuals) < video_count:
+        if len(visuals) < video_count and any(p in providers for p in ("pixabay", "pexels")):
             queries = self._build_queries(clean_kw)
             for query in queries:
-                for path in self._fetch_pexels_videos(query, video_count - len(visuals)):
+                needed = video_count - len(visuals)
+                for path in self._fetch_remote_videos(query, needed, providers):
                     if path not in visuals:
                         visuals.append(path)
                     if len(visuals) >= video_count:
@@ -63,7 +74,7 @@ class StockResolver:
         photos: list[Path] = []
         if photo_count > 0:
             for query in self._build_queries(clean_kw, artistic=True):
-                photo = self._fetch_pexels_photo_file(query)
+                photo = self._fetch_remote_photo(query, providers)
                 if photo and photo not in photos:
                     photos.append(photo)
                 if len(photos) >= photo_count:
@@ -114,6 +125,130 @@ class StockResolver:
         clips = list(keyword_dir.glob("*.mp4")) + list(keyword_dir.glob("*.mov"))
         if clips:
             return random.choice(clips)
+        return None
+
+    def _find_local_any(self, limit: int) -> list[Path]:
+        if limit <= 0 or not self.library_path.exists():
+            return []
+        clips = list(self.library_path.glob("**/*.mp4")) + list(self.library_path.glob("**/*.mov"))
+        random.shuffle(clips)
+        return clips[:limit]
+
+    def _fetch_remote_videos(
+        self, query: str, limit: int, providers: list[str]
+    ) -> list[Path]:
+        if limit <= 0:
+            return []
+        fetchers: list[Callable[[str, int], list[Path]]] = []
+        if "pixabay" in providers:
+            fetchers.append(self._fetch_pixabay_videos)
+        if "pexels" in providers:
+            fetchers.append(self._fetch_pexels_videos)
+
+        results: list[Path] = []
+        for fetch in fetchers:
+            for path in fetch(query, limit - len(results)):
+                if path not in results:
+                    results.append(path)
+                if len(results) >= limit:
+                    return results
+        return results
+
+    def _fetch_remote_photo(self, query: str, providers: list[str]) -> Path | None:
+        if "pixabay" in providers:
+            photo = self._fetch_pixabay_photo_file(query)
+            if photo:
+                return photo
+        if "pexels" in providers:
+            return self._fetch_pexels_photo_file(query)
+        return None
+
+    def _fetch_pixabay_videos(self, query: str, limit: int) -> list[Path]:
+        if not self.config.pixabay_api_key or limit <= 0:
+            return []
+        try:
+            resp = requests.get(
+                "https://pixabay.com/api/videos/",
+                params={
+                    "key": self.config.pixabay_api_key,
+                    "q": query,
+                    "per_page": min(limit + 3, 20),
+                    "video_type": "film",
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            hits = resp.json().get("hits", [])
+        except requests.RequestException as exc:
+            self.logger.warn("stock", f"Pixabay video failed: {exc}")
+            return []
+
+        random.shuffle(hits)
+        results: list[Path] = []
+        for hit in hits:
+            if len(results) >= limit:
+                break
+            path = self._download_pixabay_video(hit)
+            if path:
+                results.append(path)
+        return results
+
+    def _download_pixabay_video(self, hit: dict) -> Path | None:
+        videos = hit.get("videos", {})
+        for quality in ("large", "medium", "small", "tiny"):
+            url = videos.get(quality, {}).get("url")
+            if url:
+                break
+        else:
+            return None
+        vid_id = hit.get("id", random.randint(1, 99999))
+        out = self.cache_path / f"pixabay_{vid_id}.mp4"
+        if out.exists():
+            return out
+        try:
+            r = requests.get(url, timeout=120)
+            r.raise_for_status()
+            out.write_bytes(r.content)
+            return out
+        except requests.RequestException:
+            return None
+
+    def _fetch_pixabay_photo_file(self, query: str) -> Path | None:
+        if not self.config.pixabay_api_key:
+            return None
+        try:
+            resp = requests.get(
+                "https://pixabay.com/api/",
+                params={
+                    "key": self.config.pixabay_api_key,
+                    "q": query,
+                    "per_page": 12,
+                    "orientation": "vertical",
+                    "image_type": "photo",
+                },
+                timeout=30,
+            )
+            resp.raise_for_status()
+            hits = resp.json().get("hits", [])
+        except requests.RequestException as exc:
+            self.logger.warn("stock", f"Pixabay photo failed: {exc}")
+            return None
+
+        random.shuffle(hits)
+        for hit in hits:
+            url = hit.get("largeImageURL") or hit.get("webformatURL")
+            if not url:
+                continue
+            out = self.cache_path / f"pixabay_photo_{hit.get('id', 0)}.jpg"
+            if out.exists():
+                return out
+            try:
+                r = requests.get(url, timeout=60)
+                r.raise_for_status()
+                out.write_bytes(r.content)
+                return out
+            except requests.RequestException:
+                continue
         return None
 
     def _fetch_pexels_videos(self, query: str, limit: int) -> list[Path]:
@@ -211,7 +346,9 @@ class StockResolver:
         return path
 
     def fetch_photo(self, keywords: list[str], width: int, height: int) -> Image.Image | None:
-        path = self._fetch_pexels_photo_file(" ".join(keywords[:3]) + " dark cinematic artistic")
+        providers = [p.lower() for p in self.config.video.stock_providers]
+        query = " ".join(keywords[:3]) + " dark cinematic artistic"
+        path = self._fetch_remote_photo(query, providers)
         if path:
             return Image.open(path).convert("RGB")
         return None

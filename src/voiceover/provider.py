@@ -62,9 +62,16 @@ def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> Voiceov
 
     if provider == "fish-audio":
         fish = FishAudioVoiceover(config, logger)
-        if config.fish_audio_fallback:
-            return FallbackVoiceover(fish, fallback, logger, "fish-audio")
-        return fish
+        if not config.fish_audio_fallback:
+            return fish
+        chain: VoiceoverProvider = fallback
+        fallback_label = "edge-tts"
+        if config.sarvam_api_key and config.sarvam_fallback:
+            chain = FallbackVoiceover(
+                SarvamVoiceover(config, logger), fallback, logger, "sarvam", "edge-tts"
+            )
+            fallback_label = "sarvam"
+        return FallbackVoiceover(fish, chain, logger, "fish-audio", fallback_label)
 
     if provider == "sarvam":
         sarvam = SarvamVoiceover(config, logger)

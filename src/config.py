@@ -21,6 +21,11 @@ class BrandConfig:
     display_font: str = "assets/fonts/BebasNeue-Regular.ttf"
     body_font: str = "assets/fonts/Inter-Regular.ttf"
     quote_font: str = "C:/Windows/Fonts/georgiab.ttf"
+    caption_font: str = "assets/fonts/AnekDevanagari-ExtraBold.ttf"
+    hindi_quote_font: str = "assets/fonts/NotoSerifDevanagari-Regular.ttf"
+    caption_font_size: int = 52
+    hook_font_size: int = 58
+    caption_outline: int = 4
     watermark_text: str = "Rahasya.exe"
     logo_path: str = "assets/brand/logo.png"
     intro_duration_sec: float = 1.0
@@ -56,7 +61,11 @@ class VideoConfig:
     clip_count: int = 6
     photo_count: int = 2
     artistic_stock: bool = True
-    bgm_volume: float = 0.22
+    stock_providers: list[str] = field(
+        default_factory=lambda: ["local", "pixabay", "pexels"]
+    )
+    bgm_volume: float = 0.10
+    voiceover_volume: float = 1.35
     instagram_max_sec: int = 90
     instagram_max_upload_mb: int = 12
     sfx_enabled: bool = True
@@ -135,6 +144,7 @@ class AppConfig:
     fish_audio_api_key: str = ""
     sarvam_api_key: str = ""
     pexels_api_key: str = ""
+    pixabay_api_key: str = ""
     metricool_api_key: str = ""
     metricool_user_id: str = ""
     meta_access_token: str = ""
@@ -229,6 +239,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     config.fish_audio_api_key = os.getenv("FISH_AUDIO_API_KEY", "")
     config.sarvam_api_key = os.getenv("SARVAM_API_KEY", "")
     config.pexels_api_key = os.getenv("PEXELS_API_KEY", "")
+    config.pixabay_api_key = os.getenv("PIXABAY_API_KEY", "")
     config.metricool_api_key = os.getenv("METRICOOL_API_KEY", "")
     config.metricool_user_id = os.getenv("METRICOOL_USER_ID", "")
     config.meta_access_token = os.getenv("META_ACCESS_TOKEN", "").strip()

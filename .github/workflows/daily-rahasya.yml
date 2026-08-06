@@ -18,6 +18,10 @@ on:
         description: "Comma-separated episode numbers to mark done before run (e.g. 1 or 1,2)"
         type: string
         default: ""
+      use_repo_state:
+        description: "Use data/rahasya.db from git (ignore pipeline-db artifact — for resets)"
+        type: boolean
+        default: false
 
 concurrency:
   group: rahasya-${{ github.ref }}
@@ -79,8 +83,7 @@ jobs:
         id: state_cache
         with:
           path: |
-            data
-            output
+            output/stock_cache
           key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
           restore-keys: |
             rahasya-state-${{ github.ref }}-
@@ -123,9 +126,14 @@ jobs:
         run: bash scripts/gha_setup.sh env
 
       - name: Restore database from previous artifact
+        if: inputs.use_repo_state != true
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scripts/restore_pipeline_db.sh
+
+      - name: Use repository pipeline state
+        if: inputs.use_repo_state == true
+        run: git checkout HEAD -- data/rahasya.db data/checkpoint.json
 
       - name: Verify Meta token
         if: env.META_ACCESS_TOKEN != ''
@@ -162,9 +170,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: |
-            data
-            output
+          path: output/stock_cache
           key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
 
       - name: Wait until 7:30 PM IST
@@ -193,9 +199,7 @@ jobs:
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: |
-            data
-            output
+          path: output/stock_cache
           key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
 
       - name: Upload latest output

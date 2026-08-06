@@ -26,7 +26,9 @@ class ScriptState(TypedDict, total=False):
     previous: dict | None
 
 
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 6
+# Accept near-miss scripts when LLM rate limits block another refine pass.
+MIN_SHORT_TOLERANCE = 30
 
 
 def _validate_script(data: dict[str, Any], min_chars: int, max_chars: int) -> str | None:
@@ -158,9 +160,23 @@ class ScriptGraphRunner:
         if state.get("attempt", 0) >= MAX_ATTEMPTS:
             err = state.get("error", "")
             if "too short" in (err or ""):
+                body = (
+                    state.get("script_data", {}).get("episode_only_script")
+                    or state.get("script_data", {}).get("voiceover_script")
+                    or ""
+                )
+                length = len(body.strip())
+                floor = state["min_chars"] - MIN_SHORT_TOLERANCE
+                if length >= floor:
+                    self.logger.warn(
+                        "script_graph",
+                        f"accepting slightly short script ({length} chars, floor {floor})",
+                    )
+                    return "done"
                 raise ValueError(
                     f"Script too short after {MAX_ATTEMPTS} attempts: {err}. "
-                    f"Minimum {state['min_chars']} chars required for {self.config.script_min_seconds}s reel."
+                    f"Minimum {state['min_chars']} chars required for "
+                    f"{self.config.script_min_seconds}s reel."
                 )
             self.logger.warn("script_graph", "max attempts — using best effort with trim")
             return "done"

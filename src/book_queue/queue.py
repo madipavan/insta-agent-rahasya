@@ -89,6 +89,7 @@ class BookQueue:
             if not episode:
                 self.complete_novel(novel)
                 novel = self.activate_next_novel()
+                apply_checkpoint_to_db(self.db, data_dir, novel.id, novel.title)
                 self.db.log_episode_state(novel.id, self.logger)
                 episode = self.db.get_next_pending_episode(novel.id)
                 if not episode:
@@ -98,6 +99,13 @@ class BookQueue:
                 marked = self.db.set_episode_status_by_num(
                     novel.id, episode.episode_num, "generated"
                 )
+                if marked:
+                    save_checkpoint(
+                        data_dir,
+                        novel_id=novel.id,
+                        novel_title=novel.title,
+                        episode_num=episode.episode_num,
+                    )
                 self.db.refresh_novel_current_episode(novel.id)
                 self.logger.info(
                     f"queue | ep {episode.episode_num} already has reel.mp4 on disk "

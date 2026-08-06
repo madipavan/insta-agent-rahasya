@@ -460,7 +460,8 @@ class Database:
 
         slug = slugify_novel(novel.title)
         nums: set[int] = set()
-        for sub in ("posted", "approved", "review", "ready_to_upload", "work"):
+        # Only finished bundles — ignore output/work (failed partial CI runs).
+        for sub in ("posted", "approved", "ready_to_upload", "review"):
             folder = output_dir / sub
             if not folder.exists():
                 continue

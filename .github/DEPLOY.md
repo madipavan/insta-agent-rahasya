@@ -1,6 +1,6 @@
 # Deploy with GitHub Actions (free)
 
-Runs daily at **5:00 PM IST** → generates reel + carousel → schedules on Meta for **next day 7:30 PM**.
+Runs on **cron-job.org** triggers (morning generate, evening publish). See [docs/CRON_SETUP.md](../docs/CRON_SETUP.md).
 
 Your PC can stay off.
 
@@ -33,11 +33,18 @@ GitHub → your repo → **Settings** → **Secrets and variables** → **Action
 | `TELEGRAM_BOT_TOKEN` | Optional | Error notifications |
 | `TELEGRAM_CHAT_ID` | Optional | Error notifications |
 
-## 3. Enable workflow
+## 3. Enable workflow + cron-job.org
 
-GitHub → **Actions** → **Daily Pipeline** → **Enable workflows**
+GitHub → **Actions** → **Daily Rahasya** → **Enable workflows**
 
-Test manually: **Run workflow** → **Run workflow**
+Set up two jobs on [cron-job.org](https://cron-job.org) — full steps in **docs/CRON_SETUP.md**:
+
+| Time (IST) | API body `mode` |
+|------------|-----------------|
+| 8:00 AM | `generate` |
+| 7:30 PM | `publish` |
+
+Test manually: **Actions** → **Run workflow** → choose `generate` or `publish`
 
 ## 4. Continue from episode 10 (optional)
 
@@ -73,11 +80,10 @@ git push
 
 | Event | Time (IST) |
 |-------|------------|
-| GitHub Actions runs | 5:00 PM daily |
-| Instagram reel posts | 7:30 PM next day |
-| Carousel posts | 7:35 PM next day |
+| cron-job.org → generate | ~8:00 AM |
+| cron-job.org → publish | ~7:30 PM |
 
-Config: `config.yaml` → `post_time: "19:30"`, `review_required: false`
+Config: `config.yaml` → `post_time` is legacy; publish timing is set on cron-job.org.
 
 ## Troubleshooting
 

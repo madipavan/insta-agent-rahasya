@@ -1,30 +1,26 @@
 name: Daily Rahasya
 
 on:
-  schedule:
-    # 6:00 PM IST = 12:30 UTC — generate, wait until 7:30 PM IST, then publish
-    - cron: "30 12 * * *"
   workflow_dispatch:
     inputs:
-      skip_wait:
-        description: "Skip wait until 7:30 PM IST (publish right after generate)"
-        type: boolean
-        default: true
-      generate_only:
-        description: "Generate only — do not publish"
-        type: boolean
-        default: false
+      mode:
+        description: "generate = morning reel build | publish = evening Instagram post"
+        type: choice
+        options:
+          - generate
+          - publish
+        default: generate
       skip_episodes:
         description: "Comma-separated episode numbers to mark done before run (e.g. 1 or 1,2)"
         type: string
         default: ""
       use_repo_state:
-        description: "Use data/rahasya.db from git (ignore pipeline-db artifact — for resets)"
+        description: "Use data/rahasya.db from git (ignore pipeline-state artifact — for resets)"
         type: boolean
         default: false
 
 concurrency:
-  group: rahasya-${{ github.ref }}
+  group: rahasya-${{ github.ref }}-${{ inputs.mode }}
   cancel-in-progress: false
 
 jobs:
@@ -63,11 +59,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Job mode
+        run: |
+          echo "mode=${{ inputs.mode }}"
+          if [ "${{ inputs.mode }}" = "generate" ]; then
+            echo "Morning job — generate reel only"
+          else
+            echo "Evening job — publish to Instagram (no wait)"
+          fi
+
       - name: Check required secrets
         run: |
-          if [ -z "$GROQ_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$MISTRAL_API_KEY" ]; then
-            echo "::error::Set at least one LLM key: GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY"
-            exit 1
+          if [ "${{ inputs.mode }}" = "generate" ]; then
+            if [ -z "$GROQ_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$MISTRAL_API_KEY" ]; then
+              echo "::error::Set at least one LLM key: GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY"
+              exit 1
+            fi
+          fi
+          if [ "${{ inputs.mode }}" = "publish" ]; then
+            if [ -z "$META_ACCESS_TOKEN" ] || [ -z "$META_IG_USER_ID" ]; then
+              echo "::error::META_ACCESS_TOKEN and META_IG_USER_ID are required for publishing"
+              exit 1
+            fi
           fi
           if [ -z "$PEXELS_API_KEY" ] && [ -z "$PIXABAY_API_KEY" ]; then
             echo "::warning::PEXELS_API_KEY and PIXABAY_API_KEY missing — stock footage may fail"
@@ -82,8 +95,7 @@ jobs:
         uses: actions/cache/restore@v4
         id: state_cache
         with:
-          path: |
-            output/stock_cache
+          path: output/stock_cache
           key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
           restore-keys: |
             rahasya-state-${{ github.ref }}-
@@ -113,34 +125,35 @@ jobs:
             requirements-ml.txt
 
       - name: Install system dependencies
+        if: inputs.mode == 'generate'
         timeout-minutes: 12
         run: bash scripts/gha_setup.sh system
 
       - name: Install Python dependencies
         timeout-minutes: 20
         env:
-          INSTALL_ML: "1"
+          INSTALL_ML: ${{ inputs.mode == 'generate' && '1' || '0' }}
         run: bash scripts/gha_setup.sh python
 
       - name: Write CI environment
         run: bash scripts/gha_setup.sh env
 
-      - name: Restore database from previous artifact
+      - name: Restore pipeline state from artifact
         if: inputs.use_repo_state != true
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/restore_pipeline_db.sh
+        run: bash scripts/restore_pipeline_state.sh
 
       - name: Use repository pipeline state
         if: inputs.use_repo_state == true
         run: git checkout HEAD -- data/rahasya.db data/checkpoint.json
 
       - name: Verify Meta token
-        if: env.META_ACCESS_TOKEN != ''
+        if: inputs.mode == 'publish' && env.META_ACCESS_TOKEN != ''
         run: python main.py meta-test || true
 
       - name: Skip completed episodes (manual override)
-        if: inputs.skip_episodes != ''
+        if: inputs.mode == 'generate' && inputs.skip_episodes != ''
         run: |
           IFS=',' read -ra EPS <<< "${{ inputs.skip_episodes }}"
           for ep in "${EPS[@]}"; do
@@ -153,57 +166,49 @@ jobs:
         run: python main.py status
 
       - name: Generate episode
+        if: inputs.mode == 'generate'
         run: python main.py run
 
-      - name: Upload pipeline database
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pipeline-db
-          path: |
-            data/rahasya.db
-            data/checkpoint.json
-          retention-days: 90
-          if-no-files-found: ignore
-
       - name: Save pipeline state (post-generate)
-        if: always()
+        if: always() && inputs.mode == 'generate'
         uses: actions/cache/save@v4
         with:
           path: output/stock_cache
           key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
 
-      - name: Wait until 7:30 PM IST
-        if: |
-          inputs.generate_only != true &&
-          (github.event_name == 'schedule' || inputs.skip_wait != true)
-        run: python scripts/wait_until_post_time.py
-
       - name: Publish to Instagram
-        if: inputs.generate_only != true
+        if: inputs.mode == 'publish'
         run: |
-          if [ -z "$META_ACCESS_TOKEN" ] || [ -z "$META_IG_USER_ID" ]; then
-            echo "::error::META_ACCESS_TOKEN and META_IG_USER_ID are required for publishing"
-            exit 1
-          fi
           echo "Pending publish bundles:"
           PENDING=$(python -c "from src.config import load_config; from src.pipeline.publisher import pending_publish_count; print(pending_publish_count(load_config()))")
           echo "$PENDING"
           if [ "$PENDING" = "0" ]; then
-            echo "::error::No bundles in pending_publish queue after generate step"
+            echo "::error::No bundles in pending_publish queue — run generate job first"
             exit 1
           fi
           python main.py publish --now
 
-      - name: Save pipeline state (final)
+      - name: Upload pipeline state
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-state
+          path: |
+            data/rahasya.db
+            data/checkpoint.json
+            output/review/
+          retention-days: 90
+          if-no-files-found: ignore
+
+      - name: Save pipeline state (final)
+        if: always() && inputs.mode == 'generate'
         uses: actions/cache/save@v4
         with:
           path: output/stock_cache
           key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
 
       - name: Upload latest output
-        if: always()
+        if: always() && inputs.mode == 'generate'
         uses: actions/upload-artifact@v4
         with:
           name: latest-episode-${{ github.run_number }}

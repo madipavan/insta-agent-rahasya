@@ -2,12 +2,12 @@
 
 ## Schedule
 
-| Setting | Value |
-|---------|-------|
-| Generate | `python main.py run` |
-| Publish | `python main.py publish` |
-| Post time | **19:30 IST** (`post_time` in `config.yaml`) |
-| Cadence | **Every 2 days** (~12–15 reels/month) |
+Triggered by **cron-job.org** (not GitHub `schedule`). See [CRON_SETUP.md](CRON_SETUP.md).
+
+| Job | Time (IST) | Action |
+|-----|------------|--------|
+| Morning | ~8:00 AM | `mode=generate` → `python main.py run` |
+| Evening | ~7:30 PM | `mode=publish` → `python main.py publish --now` |
 | Novels | **One arc at a time** — finish before starting the next |
 | Review | `auto_publish: false` — watch `reel.mp4` before publishing |
 

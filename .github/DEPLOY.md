@@ -37,14 +37,14 @@ GitHub → your repo → **Settings** → **Secrets and variables** → **Action
 
 GitHub → **Actions** → **Daily Rahasya** → **Enable workflows**
 
-Set up two jobs on [cron-job.org](https://cron-job.org) — full steps in **docs/CRON_SETUP.md**:
+Set up **two** jobs on [cron-job.org](https://cron-job.org) — same API body, different times. Full steps in **docs/CRON_SETUP.md**:
 
-| Time (IST) | API body `mode` |
-|------------|-----------------|
-| 8:00 AM | `generate` |
-| 7:30 PM | `publish` |
+| Time (IST) | What happens |
+|------------|----------------|
+| 8:00 AM | generate + publish 1 reel |
+| 7:30 PM | generate + publish 1 reel |
 
-Test manually: **Actions** → **Run workflow** → choose `generate` or `publish`
+Test manually: **Actions** → **Run workflow**
 
 ## 4. Continue from episode 10 (optional)
 
@@ -80,8 +80,8 @@ git push
 
 | Event | Time (IST) |
 |-------|------------|
-| cron-job.org → generate | ~8:00 AM |
-| cron-job.org → publish | ~7:30 PM |
+| cron-job.org (morning) | ~8:00 AM — full pipeline |
+| cron-job.org (evening) | ~7:30 PM — full pipeline |
 
 Config: `config.yaml` → `post_time` is legacy; publish timing is set on cron-job.org.
 

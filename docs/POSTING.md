@@ -2,12 +2,14 @@
 
 ## Schedule
 
-Triggered by **cron-job.org** (not GitHub `schedule`). See [CRON_SETUP.md](CRON_SETUP.md).
+Triggered twice daily by **cron-job.org** — each run does **generate + publish**. See [CRON_SETUP.md](CRON_SETUP.md).
 
-| Job | Time (IST) | Action |
-|-----|------------|--------|
-| Morning | ~8:00 AM | `mode=generate` → `python main.py run` |
-| Evening | ~7:30 PM | `mode=publish` → `python main.py publish --now` |
+| Trigger | Time (IST) | Result |
+|---------|------------|--------|
+| Morning | ~8:00 AM | 1 reel generated + posted |
+| Evening | ~7:30 PM | 1 reel generated + posted |
+
+**2 reels per day** (~60/month max; tune cron if you want fewer).
 | Novels | **One arc at a time** — finish before starting the next |
 | Review | `auto_publish: false` — watch `reel.mp4` before publishing |
 

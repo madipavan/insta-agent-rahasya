@@ -3,13 +3,6 @@ name: Daily Rahasya
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: "generate = morning reel build | publish = evening Instagram post"
-        type: choice
-        options:
-          - generate
-          - publish
-        default: generate
       skip_episodes:
         description: "Comma-separated episode numbers to mark done before run (e.g. 1 or 1,2)"
         type: string
@@ -20,7 +13,7 @@ on:
         default: false
 
 concurrency:
-  group: rahasya-${{ github.ref }}-${{ inputs.mode }}
+  group: rahasya-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -59,28 +52,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Job mode
-        run: |
-          echo "mode=${{ inputs.mode }}"
-          if [ "${{ inputs.mode }}" = "generate" ]; then
-            echo "Morning job — generate reel only"
-          else
-            echo "Evening job — publish to Instagram (no wait)"
-          fi
-
       - name: Check required secrets
         run: |
-          if [ "${{ inputs.mode }}" = "generate" ]; then
-            if [ -z "$GROQ_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$MISTRAL_API_KEY" ]; then
-              echo "::error::Set at least one LLM key: GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY"
-              exit 1
-            fi
+          if [ -z "$GROQ_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$MISTRAL_API_KEY" ]; then
+            echo "::error::Set at least one LLM key: GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY"
+            exit 1
           fi
-          if [ "${{ inputs.mode }}" = "publish" ]; then
-            if [ -z "$META_ACCESS_TOKEN" ] || [ -z "$META_IG_USER_ID" ]; then
-              echo "::error::META_ACCESS_TOKEN and META_IG_USER_ID are required for publishing"
-              exit 1
-            fi
+          if [ -z "$META_ACCESS_TOKEN" ] || [ -z "$META_IG_USER_ID" ]; then
+            echo "::error::META_ACCESS_TOKEN and META_IG_USER_ID are required for publishing"
+            exit 1
           fi
           if [ -z "$PEXELS_API_KEY" ] && [ -z "$PIXABAY_API_KEY" ]; then
             echo "::warning::PEXELS_API_KEY and PIXABAY_API_KEY missing — stock footage may fail"
@@ -100,13 +80,6 @@ jobs:
           restore-keys: |
             rahasya-state-${{ github.ref }}-
 
-      - name: Report cache status
-        run: |
-          echo "cache-hit=${{ steps.state_cache.outputs.cache-hit }}"
-          ls -la data/ 2>/dev/null || echo "no data/ yet"
-          ls -la data/rahasya.db 2>/dev/null || echo "no rahasya.db yet"
-          ls -la data/checkpoint.json 2>/dev/null || echo "no checkpoint.json yet"
-
       - name: Cache pip
         uses: actions/cache@v4
         with:
@@ -125,14 +98,13 @@ jobs:
             requirements-ml.txt
 
       - name: Install system dependencies
-        if: inputs.mode == 'generate'
         timeout-minutes: 12
         run: bash scripts/gha_setup.sh system
 
       - name: Install Python dependencies
         timeout-minutes: 20
         env:
-          INSTALL_ML: ${{ inputs.mode == 'generate' && '1' || '0' }}
+          INSTALL_ML: "1"
         run: bash scripts/gha_setup.sh python
 
       - name: Write CI environment
@@ -149,11 +121,11 @@ jobs:
         run: git checkout HEAD -- data/rahasya.db data/checkpoint.json
 
       - name: Verify Meta token
-        if: inputs.mode == 'publish' && env.META_ACCESS_TOKEN != ''
+        if: env.META_ACCESS_TOKEN != ''
         run: python main.py meta-test || true
 
       - name: Skip completed episodes (manual override)
-        if: inputs.mode == 'generate' && inputs.skip_episodes != ''
+        if: inputs.skip_episodes != ''
         run: |
           IFS=',' read -ra EPS <<< "${{ inputs.skip_episodes }}"
           for ep in "${EPS[@]}"; do
@@ -165,28 +137,8 @@ jobs:
       - name: Pipeline status before run
         run: python main.py status
 
-      - name: Generate episode
-        if: inputs.mode == 'generate'
-        run: python main.py run
-
-      - name: Save pipeline state (post-generate)
-        if: always() && inputs.mode == 'generate'
-        uses: actions/cache/save@v4
-        with:
-          path: output/stock_cache
-          key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
-
-      - name: Publish to Instagram
-        if: inputs.mode == 'publish'
-        run: |
-          echo "Pending publish bundles:"
-          PENDING=$(python -c "from src.config import load_config; from src.pipeline.publisher import pending_publish_count; print(pending_publish_count(load_config()))")
-          echo "$PENDING"
-          if [ "$PENDING" = "0" ]; then
-            echo "::error::No bundles in pending_publish queue — run generate job first"
-            exit 1
-          fi
-          python main.py publish --now
+      - name: Generate and publish episode
+        run: python main.py run --publish-now
 
       - name: Upload pipeline state
         if: always()
@@ -200,15 +152,15 @@ jobs:
           retention-days: 90
           if-no-files-found: ignore
 
-      - name: Save pipeline state (final)
-        if: always() && inputs.mode == 'generate'
+      - name: Save stock cache
+        if: always()
         uses: actions/cache/save@v4
         with:
           path: output/stock_cache
           key: rahasya-state-${{ github.ref }}-${{ github.run_number }}
 
       - name: Upload latest output
-        if: always() && inputs.mode == 'generate'
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: latest-episode-${{ github.run_number }}

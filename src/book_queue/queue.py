@@ -35,10 +35,10 @@ class BookQueue:
 
     def ensure_queue(self) -> None:
         seed_path = self.config.path("novels_seed")
-        if self.db.count_queued_novels() == 0 and not self.db.get_active_novel():
+        if self.db.count_queued_novels() < self.config.discovery.min_queue_size:
             imported = self.db.import_seed_file(seed_path)
             if imported:
-                self.logger.info(f"Imported {imported} novels from seed file")
+                self.logger.info(f"queue | imported {imported} novel(s) from seed file")
 
         if self.db.count_queued_novels() < self.config.discovery.min_queue_size:
             self.discovery.run()

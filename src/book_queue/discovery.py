@@ -45,6 +45,15 @@ class NovelDiscovery:
     def run(self) -> int:
         self.logger.start("discovery", "scanning public domain sources")
         candidates = self._fetch_gutenberg_candidates()
+        if not candidates:
+            self.logger.warn(
+                "discovery",
+                "Gutendex unavailable (often blocked on CI) — loading novels_seed.json",
+            )
+            added = self.db.import_seed_file(self.config.path("novels_seed"))
+            self.logger.ok("discovery", f"added {added} novels from seed")
+            return added
+
         added = 0
         for candidate in candidates:
             if added >= self.config.discovery.batch_size:

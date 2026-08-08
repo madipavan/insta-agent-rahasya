@@ -21,7 +21,11 @@ WORKFLOW_URL = (
 BODY = json.dumps(
     {
         "ref": os.getenv("GITHUB_REF", "master"),
-        "inputs": {"skip_episodes": "", "use_repo_state": "false"},
+        "inputs": {
+            "skip_episodes": "",
+            "use_repo_state": "false",
+            "next_novel": "false",
+        },
     }
 )
 

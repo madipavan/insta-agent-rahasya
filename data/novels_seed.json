@@ -8,6 +8,69 @@
       "public_domain": true,
       "source_link": "https://www.gutenberg.org/ebooks/558",
       "adaptation_checked": true
+    },
+    {
+      "title": "The Riddle of the Sands",
+      "author": "Erskine Childers",
+      "country": "UK",
+      "chapter_count": 18,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/768",
+      "adaptation_checked": true
+    },
+    {
+      "title": "The Woman in White",
+      "author": "Wilkie Collins",
+      "country": "UK",
+      "chapter_count": 24,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/583",
+      "adaptation_checked": true
+    },
+    {
+      "title": "The Moonstone",
+      "author": "Wilkie Collins",
+      "country": "UK",
+      "chapter_count": 22,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/155",
+      "adaptation_checked": true
+    },
+    {
+      "title": "The Secret Agent",
+      "author": "Joseph Conrad",
+      "country": "UK",
+      "chapter_count": 14,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/974",
+      "adaptation_checked": true
+    },
+    {
+      "title": "The Circular Staircase",
+      "author": "Mary Roberts Rinehart",
+      "country": "US",
+      "chapter_count": 20,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/434",
+      "adaptation_checked": true
+    },
+    {
+      "title": "The Mystery of the Yellow Room",
+      "author": "Gaston Leroux",
+      "country": "France",
+      "chapter_count": 18,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/3063",
+      "adaptation_checked": true
+    },
+    {
+      "title": "Trent's Last Case",
+      "author": "E. C. Bentley",
+      "country": "UK",
+      "chapter_count": 12,
+      "public_domain": true,
+      "source_link": "https://www.gutenberg.org/ebooks/5062",
+      "adaptation_checked": true
     }
   ]
 }

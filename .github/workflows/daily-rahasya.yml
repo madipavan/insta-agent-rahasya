@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       next_novel:
-        description: "Skip current novel and start the next one in queue"
+        description: "ADVANCED ONLY — abandon current novel and switch (leave unchecked for daily runs)"
         type: boolean
         default: false
 

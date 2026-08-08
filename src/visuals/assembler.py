@@ -130,22 +130,33 @@ class ReelAssembler:
 
             self._pad_audio(vo_for_mix, padded_audio, intro_dur, outro_dur)
 
-            boosted_audio = tmp_dir / "boosted_audio.aac"
-            self._boost_voice(padded_audio, boosted_audio, self.config.video.voiceover_volume)
-
-            final_audio = boosted_audio
+            final_audio = padded_audio
             if bgm_path and bgm_path.exists():
                 mixed = tmp_dir / "mixed_audio.aac"
                 vol = self.config.video.bgm_volume
-                self._mix_bgm(boosted_audio, bgm_path, mixed, bgm_volume=vol)
+                voice_vol = self.config.video.voiceover_volume
+                self._mix_bgm(
+                    padded_audio,
+                    bgm_path,
+                    mixed,
+                    bgm_volume=vol,
+                    voice_volume=voice_vol,
+                )
                 final_audio = mixed
+                self._verify_bgm_audible(mixed, intro_dur)
                 self.logger.info(
-                    f"reel_assembly | BGM at {vol:.0%}, voice at {self.config.video.voiceover_volume:.0%}"
+                    f"reel_assembly | BGM at {vol:.0%}, voice at {voice_vol:.0%}"
                 )
             elif bgm_path:
                 self.logger.warn("reel_assembly", f"BGM path missing on disk: {bgm_path}")
+                boosted_audio = tmp_dir / "boosted_audio.aac"
+                self._boost_voice(padded_audio, boosted_audio, self.config.video.voiceover_volume)
+                final_audio = boosted_audio
             else:
                 self.logger.warn("reel_assembly", "no BGM assigned — voice-only reel")
+                boosted_audio = tmp_dir / "boosted_audio.aac"
+                self._boost_voice(padded_audio, boosted_audio, self.config.video.voiceover_volume)
+                final_audio = boosted_audio
 
             self._run_ffmpeg([
                 "-y", "-i", str(combined), "-i", str(final_audio),
@@ -265,32 +276,77 @@ class ReelAssembler:
         ])
 
     def _boost_voice(self, input_audio: Path, output_audio: Path, gain: float) -> None:
-        """Raise narration level so it sits clearly above BGM."""
+        """Raise narration level (voice-only reels; BGM path uses _mix_bgm instead)."""
         if gain <= 0 or abs(gain - 1.0) < 0.02:
             import shutil
             shutil.copy(input_audio, output_audio)
             return
-        # alimiter prevents clipping after gain; dynaudnorm lifts quiet TTS sources
         self._run_ffmpeg([
             "-y", "-i", str(input_audio),
-            "-af", f"dynaudnorm=f=150:g=15,volume={gain:.2f},alimiter=limit=0.95",
+            "-af", f"volume={gain:.2f},alimiter=limit=0.95",
             "-c:a", "aac", str(output_audio),
         ])
 
-    def _mix_bgm(self, voiceover: Path, bgm: Path, output: Path, bgm_volume: float = 0.12) -> None:
-        """Mix novel BGM under voiceover at low volume (voice already boosted)."""
-        # normalize=0 keeps voice level — default amix divides each input by N and
-        # makes BGM inaudible / crushes narration when SFX were mixed earlier.
+    def _mix_bgm(
+        self,
+        voiceover: Path,
+        bgm: Path,
+        output: Path,
+        bgm_volume: float = 0.35,
+        voice_volume: float = 1.4,
+    ) -> None:
+        """Mix BGM under voice with sidechain ducking so underscore stays audible."""
         self._run_ffmpeg([
-            "-y", "-i", str(voiceover), "-stream_loop", "-1", "-i", str(bgm),
+            "-y", "-i", str(voiceover), "-i", str(bgm),
             "-filter_complex",
             (
-                f"[1:a]volume={bgm_volume}[bgm];"
-                f"[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0,"
-                "alimiter=limit=0.98"
+                f"[1:a]aloop=loop=-1:size=2e+09,aresample=44100,"
+                f"aformat=sample_fmts=fltp:channel_layouts=stereo,volume={bgm_volume}[bgm_raw];"
+                f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                f"volume={voice_volume}[voice];"
+                "[bgm_raw][voice]sidechaincompress=threshold=0.015:ratio=4:attack=80:"
+                "release=800:makeup=2[bgm_ducked];"
+                "[voice][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0:"
+                "normalize=0,alimiter=limit=0.98[aout]"
             ),
+            "-map", "[aout]",
             "-c:a", "aac", str(output),
         ])
+
+    def _measure_mean_volume(
+        self, audio_path: Path, start_sec: float = 0.0, duration_sec: float = 0.8,
+    ) -> float | None:
+        import re
+
+        cmd = [
+            get_ffmpeg_exe(), "-hide_banner",
+            "-ss", str(start_sec), "-t", str(duration_sec),
+            "-i", str(audio_path),
+            "-af", "volumedetect", "-f", "null", "-",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            return None
+        for line in (result.stderr or "").splitlines():
+            match = re.search(r"mean_volume:\s*([-\d.]+)\s*dB", line)
+            if match:
+                return float(match.group(1))
+        return None
+
+    def _verify_bgm_audible(self, mixed_audio: Path, intro_dur: float) -> None:
+        """Warn if BGM is too quiet during the intro (voice-silent) segment."""
+        check_start = max(0.05, intro_dur * 0.15)
+        mean_db = self._measure_mean_volume(mixed_audio, start_sec=check_start, duration_sec=0.6)
+        if mean_db is None:
+            self.logger.warn("reel_assembly", "BGM intro check skipped (volumedetect failed)")
+            return
+        if mean_db < -35.0:
+            self.logger.warn(
+                "reel_assembly",
+                f"BGM intro check: mean={mean_db:.1f}dB — BGM may be inaudible on Instagram",
+            )
+        else:
+            self.logger.info(f"reel_assembly | BGM intro check: mean={mean_db:.1f}dB (ok)")
 
     def _run_ffmpeg(self, args: list[str]) -> None:
         cmd = [get_ffmpeg_exe(), *args]

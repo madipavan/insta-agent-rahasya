@@ -34,10 +34,11 @@ install_system_packages() {
   run_with_retry 3 timeout 300 sudo apt-get update -qq \
     -o Acquire::Retries=3 \
     -o Acquire::http::Timeout=30
+  # Devanagari/Hindi fonts come from scripts/download_fonts.sh (no Ubuntu apt package).
   run_with_retry 3 timeout 600 sudo apt-get install -y -qq \
     -o Dpkg::Options::=--force-confdef \
     -o Dpkg::Options::=--force-confold \
-    ffmpeg fonts-noto-core fonts-noto-extra fonts-noto-devanagari
+    ffmpeg fonts-noto-core fonts-noto-extra
 }
 
 download_font() {

@@ -24,6 +24,7 @@ class MetaPostResult:
     carousel_publish_id: str | None
     scheduled_reel_at: str
     scheduled_carousel_at: str
+    carousel_error: str = ""
 
     def summary(self) -> str:
         parts = [f"reel:{self.reel_container_id}"]
@@ -33,7 +34,13 @@ class MetaPostResult:
             parts.append(f"carousel:{self.carousel_container_id}")
         if self.carousel_publish_id:
             parts.append(f"carousel_pub:{self.carousel_publish_id}")
+        if self.carousel_error:
+            parts.append(f"carousel_failed:{self.carousel_error}")
         return ";".join(parts)
+
+    @property
+    def reel_posted(self) -> bool:
+        return bool(self.reel_publish_id)
 
 
 class MetaScheduler:
@@ -53,6 +60,12 @@ class MetaScheduler:
     CHUNK_SIZE_BYTES = 4 * 1024 * 1024
     GITHUB_REEL_BRANCH = "ci-reel-uploads"
     GITHUB_REEL_PREFIX = "tmp-ci-reels"
+    PUBLISH_RATE_LIMIT_CODES = {4, 17, 32, 613}
+    PUBLISH_RATE_LIMIT_SUBCODES = {2207051, 2446079}
+    RATE_LIMIT_RETRY_ATTEMPTS = 6
+    RATE_LIMIT_RETRY_BASE_SEC = 30
+    CAROUSEL_PUBLISH_DELAY_SEC = 90
+    CAROUSEL_CHILD_UPLOAD_DELAY_SEC = 2
 
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
         self.config = config
@@ -137,13 +150,29 @@ class MetaScheduler:
 
         carousel_container_id = None
         carousel_publish_id = None
+        carousel_error = ""
         if static_paths:
-            carousel_container_id = self._create_carousel_container(
-                static_paths, carousel_caption, publish_at=carousel_time
+            self.logger.info(
+                f"meta | waiting {self.CAROUSEL_PUBLISH_DELAY_SEC}s before carousel "
+                "(Meta rate-limit cooldown after reel publish)",
             )
-            carousel_publish_id = self._wait_and_publish(
-                carousel_container_id, publish_at=carousel_time
-            )
+            time.sleep(self.CAROUSEL_PUBLISH_DELAY_SEC)
+            try:
+                carousel_container_id = self._create_carousel_container(
+                    static_paths, carousel_caption, publish_at=carousel_time
+                )
+                carousel_publish_id = self._wait_and_publish(
+                    carousel_container_id, publish_at=carousel_time
+                )
+            except (requests.RequestException, RuntimeError, TimeoutError) as exc:
+                carousel_error = self._classify_publish_error(exc)
+                self.logger.warn(
+                    "meta",
+                    f"carousel publish failed after reel posted ({carousel_error}): {exc}",
+                )
+                self._save_carousel_fallback(
+                    static_paths, carousel_caption, bundle_id, carousel_error
+                )
 
         result = MetaPostResult(
             reel_container_id=reel_container,
@@ -152,7 +181,10 @@ class MetaScheduler:
             carousel_publish_id=carousel_publish_id,
             scheduled_reel_at=reel_time.isoformat(),
             scheduled_carousel_at=carousel_time.isoformat(),
+            carousel_error=carousel_error,
         )
+        if carousel_error:
+            self.logger.warn("meta", f"partial publish — reel ok, carousel failed: {carousel_error}")
         self.logger.ok("meta", result.summary())
         return result.summary()
 
@@ -843,12 +875,66 @@ class MetaScheduler:
             params=params,
             timeout=60,
         )
-        if resp.status_code >= 400:
-            self._log_api_error("media_publish", resp)
-        resp.raise_for_status()
-        publish_id = resp.json().get("id", "")
+        publish_id = self._media_publish_with_retry(resp, container_id)
         self.logger.info(f"Published container {container_id} → {publish_id}")
         return publish_id or None
+
+    def _media_publish_with_retry(
+        self, resp: requests.Response, container_id: str,
+    ) -> str:
+        for attempt in range(self.RATE_LIMIT_RETRY_ATTEMPTS):
+            if resp.status_code < 400:
+                return resp.json().get("id", "")
+
+            if self._is_rate_limited(resp) and attempt < self.RATE_LIMIT_RETRY_ATTEMPTS - 1:
+                wait = self.RATE_LIMIT_RETRY_BASE_SEC * (2 ** attempt)
+                self.logger.warn(
+                    "meta",
+                    f"media_publish rate limited for {container_id} — "
+                    f"retry in {wait}s ({attempt + 1}/{self.RATE_LIMIT_RETRY_ATTEMPTS})",
+                )
+                time.sleep(wait)
+                resp = requests.post(
+                    f"{self.GRAPH_URL}/{self.ig_user_id}/media_publish",
+                    params={
+                        "access_token": self.access_token,
+                        "creation_id": container_id,
+                    },
+                    timeout=60,
+                )
+                continue
+
+            self._log_api_error("media_publish", resp)
+            resp.raise_for_status()
+
+        raise RuntimeError(f"media_publish failed for {container_id} after rate-limit retries")
+
+    def _is_rate_limited(self, resp: requests.Response) -> bool:
+        if resp.status_code == 429:
+            return True
+        try:
+            err = resp.json().get("error", {})
+            code = err.get("code")
+            subcode = err.get("error_subcode")
+            message = (err.get("message") or "").lower()
+            if code in self.PUBLISH_RATE_LIMIT_CODES:
+                return True
+            if subcode in self.PUBLISH_RATE_LIMIT_SUBCODES:
+                return True
+            if "request limit" in message or "rate limit" in message:
+                return True
+        except (ValueError, AttributeError, TypeError):
+            pass
+        return False
+
+    @staticmethod
+    def _classify_publish_error(exc: Exception) -> str:
+        text = str(exc).lower()
+        if "request limit" in text or "rate limit" in text or "403" in text:
+            return "rate_limit"
+        if isinstance(exc, TimeoutError):
+            return "timeout"
+        return "api_error"
 
     def _upload_image_container(self, image_path: Path) -> str:
         """Upload a single image as carousel child; returns container ID."""
@@ -877,10 +963,12 @@ class MetaScheduler:
     ) -> str:
         del publish_at
         child_ids: list[str] = []
-        for img_path in image_paths:
+        for i, img_path in enumerate(image_paths):
             child_id = self._upload_image_container(img_path)
             self._wait_container_ready(child_id)
             child_ids.append(child_id)
+            if i + 1 < len(image_paths):
+                time.sleep(self.CAROUSEL_CHILD_UPLOAD_DELAY_SEC)
 
         params: dict[str, str] = {
             "access_token": self.access_token,
@@ -1032,6 +1120,31 @@ class MetaScheduler:
             encoding="utf-8",
         )
         return f"manual_package:{bundle_id}"
+
+    def _save_carousel_fallback(
+        self,
+        static_paths: list[Path],
+        caption: str,
+        bundle_id: str,
+        reason: str,
+    ) -> Path:
+        import shutil
+
+        package_dir = self.config.path("output_dir") / "ready_to_upload" / bundle_id
+        package_dir.mkdir(parents=True, exist_ok=True)
+        for i, sp in enumerate(static_paths):
+            shutil.copy2(sp, package_dir / f"static_post_{i + 1:02d}.png")
+        if static_paths:
+            shutil.copy2(static_paths[0], package_dir / "static_post.png")
+        (package_dir / "caption.txt").write_text(caption, encoding="utf-8")
+        (package_dir / "CAROUSEL_UPLOAD.txt").write_text(
+            "Reel was published successfully. Carousel failed via API.\n"
+            f"Reason: {reason}\n"
+            f"Upload static_post_*.png as an Instagram carousel with caption.txt\n",
+            encoding="utf-8",
+        )
+        self.logger.info(f"meta | saved carousel fallback package: {package_dir}")
+        return package_dir
 
     def _log_api_error(self, step: str, resp: requests.Response) -> None:
         try:

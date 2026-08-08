@@ -61,6 +61,14 @@ def approve_and_post(
         telegram.send_error(msg)
         return None
 
+    carousel_failed = "carousel_failed:" in post_id
+    reel_posted = "reel_pub:" in post_id
+    if not reel_posted:
+        msg = f"Instagram publish returned without reel_pub id: {post_id}"
+        logger.fail("approve", msg)
+        telegram.send_error(msg)
+        return None
+
     bundle = db.get_review_bundle(bundle_id)
     if bundle:
         db.log_post(
@@ -81,7 +89,17 @@ def approve_and_post(
     shutil.copytree(approved_dir, posted_dir)
 
     provider = config.post_provider or "meta"
-    telegram.send_info(f"✅ Posted/queued: `{bundle_id}`\n{provider}: {post_id}")
+    if carousel_failed:
+        reason = post_id.split("carousel_failed:", 1)[-1].split(";", 1)[0]
+        telegram.send_info(
+            f"✅ Reel posted: `{bundle_id}`\n"
+            f"⚠️ Carousel failed ({reason}) — slides saved to "
+            f"`output/ready_to_upload/{bundle_id}/` for manual upload.\n"
+            f"{provider}: {post_id}"
+        )
+        logger.warn("approve", f"partial publish — reel ok, carousel failed ({reason})")
+    else:
+        telegram.send_info(f"✅ Posted/queued: `{bundle_id}`\n{provider}: {post_id}")
     logger.ok("approve", post_id)
     return post_id
 

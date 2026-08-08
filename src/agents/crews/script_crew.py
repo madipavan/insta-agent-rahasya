@@ -26,6 +26,7 @@ NEVER write vague filler like "एक आदमी जो अपनी जान
 Name the hero. Describe what happened. Build tension scene by scene.
 Use ellipsis (…) for dramatic pauses before reveals.
 Add emotional beats — fear, suspense, shock — not flat narration.
+Do NOT explain or recap the previous episode. Cover NEW events only.
 HIT the minimum character count — short scripts are rejected."""
 
 EDITOR_SYSTEM = """You are a Retention Editor for Hindi thriller reels.
@@ -33,6 +34,7 @@ Your job is to EXPAND thin scripts and sharpen hooks/cliffhangers.
 If the script is under the minimum character count, ADD more specific story beats.
 Cut only true filler. Keep character names, scene details, emotional beats.
 Enforce character limits exactly. Output valid JSON only. NO recap phrases.
+Do NOT add previous-episode explanations. Keep only THIS episode's new events.
 Scripts must sound like film dubbing — not a robot reading words."""
 
 MAX_LLM_ATTEMPTS = 3

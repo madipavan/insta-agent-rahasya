@@ -15,16 +15,18 @@ brand:
   intro_duration_sec: 1.0
   outro_duration_sec: 1.0
 
-llm_provider: gemini
+llm_provider: grok
 llm_fallback_providers:
+  - gemini
   - groq
   - mistral
-  - gemini
+llm_model_grok: grok-3-mini
 llm_model_groq: llama-3.3-70b-versatile
 llm_model_gemini: gemini-2.5-flash
 llm_model_mistral: mistral-small-latest
 llm_model_anthropic: claude-sonnet-4-20250514
 llm_model_openai: gpt-4o
+max_episodes: 12
 
 post_time: "19:30"
 timezone: "Asia/Kolkata"
@@ -130,3 +132,4 @@ paths:
   sfx_library: assets/sfx_library
   sample_scripts: data/sample_scripts
   novels_seed: data/novels_seed.json
+  novels_pdf_dir: data/novels

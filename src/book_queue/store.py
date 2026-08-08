@@ -37,7 +37,7 @@ class Database:
                     public_domain INTEGER DEFAULT 1,
                     source_link TEXT DEFAULT '',
                     adaptation_checked INTEGER DEFAULT 0,
-                    estimated_episodes INTEGER DEFAULT 14,
+                    estimated_episodes INTEGER DEFAULT 12,
                     status TEXT DEFAULT 'queued',
                     current_episode INTEGER DEFAULT 0,
                     bgm_path TEXT DEFAULT '',
@@ -99,12 +99,12 @@ class Database:
             conn.execute("ALTER TABLE novels ADD COLUMN thumbnail_base_path TEXT DEFAULT ''")
 
         ep_cols = {row[1] for row in conn.execute("PRAGMA table_info(episodes)").fetchall()}
-        for col in ("planned_hook", "planned_cliffhanger", "retention_angle"):
+        for col in ("planned_hook", "planned_cliffhanger", "retention_angle", "script_json"):
             if col not in ep_cols:
                 conn.execute(f"ALTER TABLE episodes ADD COLUMN {col} TEXT DEFAULT ''")
 
         novel_cols = {row[1] for row in conn.execute("PRAGMA table_info(novels)").fetchall()}
-        for col in ("novel_logline", "story_summary", "retention_strategy"):
+        for col in ("novel_logline", "story_summary", "retention_strategy", "pdf_path"):
             if col not in novel_cols:
                 conn.execute(f"ALTER TABLE novels ADD COLUMN {col} TEXT DEFAULT ''")
 
@@ -125,6 +125,7 @@ class Database:
             novel_logline=row["novel_logline"] if "novel_logline" in keys else "",
             story_summary=row["story_summary"] if "story_summary" in keys else "",
             retention_strategy=row["retention_strategy"] if "retention_strategy" in keys else "",
+            pdf_path=row["pdf_path"] if "pdf_path" in keys else "",
         )
 
     def _row_to_episode(self, row: sqlite3.Row) -> Episode:
@@ -141,6 +142,7 @@ class Database:
             planned_hook=row["planned_hook"] if "planned_hook" in keys else "",
             planned_cliffhanger=row["planned_cliffhanger"] if "planned_cliffhanger" in keys else "",
             retention_angle=row["retention_angle"] if "retention_angle" in keys else "",
+            script_json=row["script_json"] if "script_json" in keys else "",
         )
 
     def add_novel(
@@ -153,8 +155,9 @@ class Database:
         source_link: str = "",
         adaptation_checked: bool = False,
         status: str = "queued",
+        max_episodes: int = 12,
     ) -> int:
-        episodes = estimate_episode_count(chapter_count)
+        episodes = estimate_episode_count(chapter_count, max_episodes=max_episodes)
         with self._connect() as conn:
             cur = conn.execute(
                 """
@@ -191,6 +194,13 @@ class Database:
     def set_novel_status(self, novel_id: int, status: str) -> None:
         with self._connect() as conn:
             conn.execute("UPDATE novels SET status = ? WHERE id = ?", (status, novel_id))
+
+    def set_estimated_episodes(self, novel_id: int, estimated_episodes: int) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE novels SET estimated_episodes = ? WHERE id = ?",
+                (estimated_episodes, novel_id),
+            )
 
     def increment_episode(self, novel_id: int) -> None:
         with self._connect() as conn:
@@ -243,14 +253,15 @@ class Database:
         planned_hook: str = "",
         planned_cliffhanger: str = "",
         retention_angle: str = "",
+        script_json: str = "",
     ) -> int:
         with self._connect() as conn:
             cur = conn.execute(
                 """
                 INSERT INTO episodes (novel_id, episode_num, chapter_start, chapter_end,
                     plot_beat_summary, cumulative_synopsis, status,
-                    planned_hook, planned_cliffhanger, retention_angle)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    planned_hook, planned_cliffhanger, retention_angle, script_json)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     novel_id,
@@ -263,6 +274,7 @@ class Database:
                     planned_hook,
                     planned_cliffhanger,
                     retention_angle,
+                    script_json,
                 ),
             )
             return cur.lastrowid
@@ -606,6 +618,34 @@ class Database:
                 """,
                 (novel_logline, story_summary, retention_strategy, novel_id),
             )
+
+    def set_novel_pdf_path(self, novel_id: int, pdf_path: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE novels SET pdf_path = ? WHERE id = ?",
+                (pdf_path, novel_id),
+            )
+
+    def set_episode_script_json(self, episode_id: int, script_json: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE episodes SET script_json = ? WHERE id = ?",
+                (script_json, episode_id),
+            )
+
+    def get_episode_script_json(self, novel_id: int, episode_num: int) -> str:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT script_json FROM episodes
+                WHERE novel_id = ? AND episode_num = ?
+                """,
+                (novel_id, episode_num),
+            ).fetchone()
+            if not row:
+                return ""
+            keys = row.keys()
+            return (row["script_json"] if "script_json" in keys else "") or ""
 
     def delete_novel_data(self, novel_id: int) -> None:
         """Remove episode rows, review bundles, and post log for a novel."""

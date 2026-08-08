@@ -58,6 +58,28 @@ class OpenAIProvider(ScriptProvider):
         return response.choices[0].message.content or ""
 
 
+class GrokProvider(ScriptProvider):
+    """xAI Grok API (OpenAI-compatible)."""
+
+    BASE_URL = "https://api.x.ai/v1"
+
+    def __init__(self, config: AppConfig) -> None:
+        from openai import OpenAI
+
+        if not config.grok_api_key:
+            raise ValueError("GROK_API_KEY not set")
+        self.client = OpenAI(api_key=config.grok_api_key, base_url=self.BASE_URL)
+        self.model = config.llm_model_grok
+
+    def complete(self, prompt: str, max_tokens: int = 8192) -> str:
+        response = self.client.chat.completions.create(
+            model=self.model,
+            max_tokens=max_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return response.choices[0].message.content or ""
+
+
 class GroqProvider(ScriptProvider):
     """Groq free-tier API (OpenAI-compatible)."""
 
@@ -142,6 +164,8 @@ def _build_provider(config: AppConfig, provider: str) -> ScriptProvider:
     provider = provider.lower()
     if provider == "openai":
         return OpenAIProvider(config)
+    if provider == "grok":
+        return GrokProvider(config)
     if provider == "groq":
         return GroqProvider(config)
     if provider == "gemini":

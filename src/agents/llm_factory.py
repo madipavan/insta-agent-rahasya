@@ -14,6 +14,7 @@ def _groq_uses_reasoning(model: str) -> bool:
 
 def _has_api_key(config: AppConfig, provider: str) -> bool:
     keys = {
+        "grok": config.grok_api_key,
         "groq": config.groq_api_key,
         "gemini": config.gemini_api_key,
         "mistral": config.mistral_api_key,
@@ -42,6 +43,19 @@ def build_chat_model(
     temperature: float = 0.7,
 ) -> BaseChatModel:
     provider = provider.lower()
+
+    if provider == "grok":
+        from langchain_openai import ChatOpenAI
+
+        if not config.grok_api_key:
+            raise ValueError("GROK_API_KEY not set")
+        return ChatOpenAI(
+            model=config.llm_model_grok,
+            api_key=config.grok_api_key,
+            base_url="https://api.x.ai/v1",
+            temperature=temperature,
+            max_tokens=8192,
+        )
 
     if provider == "groq":
         from langchain_groq import ChatGroq
@@ -121,6 +135,6 @@ def get_chat_model(
         return FallbackChatModel(config, temperature, logger)
     if not chain:
         raise ValueError(
-            "No LLM API keys set. Add GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY."
+            "No LLM API keys set. Add GROK_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY."
         )
     return build_chat_model(config, chain[0], temperature)

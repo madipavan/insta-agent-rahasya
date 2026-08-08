@@ -6,6 +6,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
+from src.agents.crews.batch_validate import validate_script_dict
 from src.agents.crews.script_crew import ScriptCrew
 from src.book_queue.models import EpisodeContext, ScriptOutput
 from src.config import AppConfig
@@ -32,19 +33,7 @@ MIN_SHORT_TOLERANCE = 30
 
 
 def _validate_script(data: dict[str, Any], min_chars: int, max_chars: int) -> str | None:
-    body = data.get("episode_only_script") or data.get("voiceover_script") or ""
-    if not body.strip():
-        return "empty voiceover_script"
-    length = len(body.strip())
-    if length < min_chars:
-        return f"too short ({length} < {min_chars})"
-    if length > max_chars + 50:
-        return f"too long ({length} > {max_chars})"
-    recap_phrases = ("पिछले एपिसोड", "पिछली कड़ी", "अब तक की कहानी")
-    if any(p in body for p in recap_phrases):
-        return "contains recap phrasing"
-    return None
-
+    return validate_script_dict(data, min_chars, max_chars)
 
 class ScriptGraphRunner:
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
@@ -79,6 +68,7 @@ class ScriptGraphRunner:
             max_chars=max_chars,
             novel_logline=context.novel.novel_logline,
             story_summary=context.novel.story_summary,
+            retention_strategy=context.novel.retention_strategy,
         )
 
         state: ScriptState = {

@@ -17,15 +17,17 @@ from src.utils.llm_text import extract_llm_text
 STRATEGIST_SYSTEM = """You are a Story Arc Strategist for Instagram suspense reels.
 Design binge-worthy episodic arcs with genuine storytelling — not vague summaries.
 Each episode must name characters, places, and specific plot events.
-Episodes chain like a TV series: each opens where the last cliffhanger left off.
+Episodes chain like a TV series but NEVER recap the previous episode in the next beat.
+Every episode must cover UNIQUE new events — no repeated plots.
 Original paraphrase only — never quote the book. Output valid JSON only."""
 
 BEAT_WRITER_SYSTEM = """You are an Episode Beat Writer. Refine arc JSON for scriptwriters.
 First create a tight novel-level story bible (logline + full-story summary in 6-8 sentences).
 Then ensure each episode has: plot_beat_summary (specific events, names, stakes),
-cumulative_synopsis (max 4 sentences), planned_hook, planned_cliffhanger, retention_angle.
-Episodes must feel connected — viewers should know WHERE we are in the story.
-Output valid JSON only."""
+cumulative_synopsis (max 3 sentences, position only — not a spoken recap),
+planned_hook, planned_cliffhanger, retention_angle.
+Episodes must feel connected WITHOUT explaining last episode.
+All plot beats must be distinct. Output valid JSON only."""
 
 
 class PlannerCrew:
@@ -58,7 +60,7 @@ class PlannerCrew:
             "Each episode object: episode_num, plot_beat_summary, cumulative_synopsis,\n"
             "planned_hook, planned_cliffhanger, retention_angle.\n"
             "plot_beat_summary must include character names and specific events — not generic 'tension rises'.\n"
-            "Episodes must chain seamlessly for binge UX."
+            "Episodes must chain for binge UX without repeating plots or recapping prior episodes."
         )
 
         self.logger.info("planner_crew | arc strategist agent")

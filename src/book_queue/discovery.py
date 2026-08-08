@@ -71,6 +71,7 @@ class NovelDiscovery:
                 source_link=candidate.get("source_link", ""),
                 adaptation_checked=True,
                 status="queued",
+                max_episodes=getattr(self.config, "max_episodes", 12),
             )
             self.db.log_discovery(title, author, "queued", f"novel_id={novel_id}")
             added += 1

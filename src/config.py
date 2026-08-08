@@ -85,18 +85,23 @@ class PathsConfig:
     sfx_library: str = "assets/sfx_library"
     sample_scripts: str = "data/sample_scripts"
     novels_seed: str = "data/novels_seed.json"
+    novels_pdf_dir: str = "data/novels"
 
 
 @dataclass
 class AppConfig:
     brand: BrandConfig = field(default_factory=BrandConfig)
-    llm_provider: str = "groq"
-    llm_fallback_providers: list[str] = field(default_factory=lambda: ["groq", "mistral", "gemini"])
+    llm_provider: str = "grok"
+    llm_fallback_providers: list[str] = field(
+        default_factory=lambda: ["gemini", "groq", "mistral"]
+    )
     llm_model_anthropic: str = "claude-sonnet-4-20250514"
     llm_model_openai: str = "gpt-4o"
+    llm_model_grok: str = "grok-3-mini"
     llm_model_groq: str = "llama-3.3-70b-versatile"
     llm_model_gemini: str = "gemini-2.5-flash"
     llm_model_mistral: str = "mistral-small-latest"
+    max_episodes: int = 12
     post_time: str = "19:30"
     timezone: str = "Asia/Kolkata"
     voice_provider: str = "elevenlabs"
@@ -137,6 +142,7 @@ class AppConfig:
 
     anthropic_api_key: str = ""
     openai_api_key: str = ""
+    grok_api_key: str = ""
     groq_api_key: str = ""
     gemini_api_key: str = ""
     mistral_api_key: str = ""
@@ -182,15 +188,17 @@ def load_config(config_path: Path | None = None) -> AppConfig:
 
     config = AppConfig(
         brand=_merge_dataclass(BrandConfig, raw.get("brand", {})),
-        llm_provider=raw.get("llm_provider", "groq"),
+        llm_provider=raw.get("llm_provider", "grok"),
         llm_fallback_providers=raw.get(
-            "llm_fallback_providers", ["groq", "mistral", "gemini"]
+            "llm_fallback_providers", ["gemini", "groq", "mistral"]
         ),
         llm_model_anthropic=raw.get("llm_model_anthropic", "claude-sonnet-4-20250514"),
         llm_model_openai=raw.get("llm_model_openai", "gpt-4o"),
+        llm_model_grok=raw.get("llm_model_grok", "grok-3-mini"),
         llm_model_groq=raw.get("llm_model_groq", "llama-3.3-70b-versatile"),
         llm_model_gemini=raw.get("llm_model_gemini", "gemini-2.5-flash"),
         llm_model_mistral=raw.get("llm_model_mistral", "mistral-small-latest"),
+        max_episodes=int(raw.get("max_episodes", 12)),
         post_time=raw.get("post_time", "19:30"),
         timezone=raw.get("timezone", "Asia/Kolkata"),
         voice_provider=raw.get("voice_provider", "elevenlabs"),
@@ -232,6 +240,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
 
     config.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY", "")
     config.openai_api_key = os.getenv("OPENAI_API_KEY", "")
+    config.grok_api_key = os.getenv("GROK_API_KEY", "") or os.getenv("XAI_API_KEY", "")
     config.groq_api_key = os.getenv("GROQ_API_KEY", "")
     config.gemini_api_key = os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
     config.mistral_api_key = os.getenv("MISTRAL_API_KEY", "")

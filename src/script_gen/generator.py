@@ -1,8 +1,8 @@
-"""Script generation via LangGraph + CrewAI."""
+"""Script generation via LangGraph + CrewAI (or saved upfront scripts)."""
 
 from __future__ import annotations
 
-from pathlib import Path
+import json
 
 from src.agents.graphs.script_graph import ScriptGraphRunner
 from src.book_queue.models import EpisodeContext, ScriptOutput
@@ -19,17 +19,57 @@ class ScriptGenerator:
         self.runner = ScriptGraphRunner(config, logger)
 
     def generate(self, context: EpisodeContext) -> ScriptOutput:
+        saved = self._load_saved_script(context)
+        if saved is not None:
+            spoken = saved.episode_script()
+            if spoken:
+                self.logger.start(
+                    "script_gen",
+                    f"ep {context.episode.episode_num} (saved script_json)",
+                )
+                self.logger.ok("script_gen", f"{len(spoken)} chars (prewritten)")
+                return saved
+
         self.logger.start("script_gen", f"ep {context.episode.episode_num} (langgraph+crewai)")
         samples = self._load_sample_scripts()
+        # Do not inject previous voiceover for recap — only cliffhanger energy if needed by live path.
         previous = self.db.get_previous_episode_context(
             context.novel.id,
             context.episode.episode_num,
         )
+        if previous:
+            previous = {
+                "cliffhanger": previous.get("cliffhanger", ""),
+                "voiceover_excerpt": "",
+                "summary": "",
+            }
         script = self.runner.generate(context, samples, previous)
         spoken = script.episode_script()
         if not spoken:
             raise ValueError("Script generation returned empty voiceover_script")
         self.logger.ok("script_gen", f"{len(spoken)} chars")
+        return script
+
+    def _load_saved_script(self, context: EpisodeContext) -> ScriptOutput | None:
+        raw = (
+            context.episode.script_json
+            or self.db.get_episode_script_json(context.novel.id, context.episode.episode_num)
+        )
+        if not raw or not str(raw).strip():
+            return None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            self.logger.warn("script_gen", "saved script_json is invalid JSON — regenerating")
+            return None
+        if not isinstance(data, dict):
+            return None
+        # Unwrap nested {"script": {...}} if present
+        if "voiceover_script" not in data and isinstance(data.get("script"), dict):
+            data = data["script"]
+        script = ScriptOutput.from_dict(data)
+        if not script.episode_script():
+            return None
         return script
 
     def _load_sample_scripts(self) -> list[str]:

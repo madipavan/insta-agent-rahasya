@@ -22,6 +22,7 @@ class Novel:
     novel_logline: str = ""
     story_summary: str = ""
     retention_strategy: str = ""
+    pdf_path: str = ""
 
 
 @dataclass
@@ -37,6 +38,7 @@ class Episode:
     planned_hook: str = ""
     planned_cliffhanger: str = ""
     retention_angle: str = ""
+    script_json: str = ""
 
 
 @dataclass

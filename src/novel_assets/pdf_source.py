@@ -104,28 +104,50 @@ class NovelPdfSource:
             formats = self._gutenberg_direct_formats(book_id)
             if formats:
                 self.logger.info(f"pdf_source | using direct Gutenberg URLs for book {book_id}")
-        pdf_url = self._pick_url(formats, _PDF_MIME_HINTS)
-        if pdf_url:
+
+        pdf_candidates: list[str] = []
+        picked_pdf = self._pick_url(formats, _PDF_MIME_HINTS)
+        if picked_pdf:
+            pdf_candidates.append(picked_pdf)
+        if book_id:
+            for url in self._gutenberg_pdf_candidates(book_id):
+                if url not in pdf_candidates:
+                    pdf_candidates.append(url)
+
+        if pdf_candidates:
             self.logger.start("pdf_source", f"downloading PDF for novel {novel_id}")
-            self._download_binary(pdf_url, dest)
-            if dest.exists() and dest.stat().st_size > 1000:
+            if self._try_download_candidates(pdf_candidates, dest):
                 self.logger.ok("pdf_source", f"saved {dest.name} ({dest.stat().st_size} bytes)")
                 return dest
 
-        text_url = self._pick_url(formats, _TEXT_MIME_HINTS)
-        if not text_url and source_link.startswith("http") and source_link.lower().endswith(".pdf"):
-            self._download_binary(source_link, dest)
-            if dest.exists() and dest.stat().st_size > 1000:
+        text_candidates: list[str] = []
+        picked_text = self._pick_url(formats, _TEXT_MIME_HINTS)
+        if picked_text:
+            text_candidates.append(picked_text)
+        if book_id:
+            for url in self._gutenberg_text_candidates(book_id):
+                if url not in text_candidates:
+                    text_candidates.append(url)
+
+        if source_link.startswith("http") and source_link.lower().endswith(".pdf"):
+            if self._try_download_candidates([source_link], dest):
                 return dest
 
-        if not text_url:
+        if not text_candidates:
             raise RuntimeError(
                 f"No PDF or text download found for novel {novel_id} "
                 f"(source={source_link!r})"
             )
 
         self.logger.start("pdf_source", f"building PDF from text for novel {novel_id}")
-        raw = self._download_text(text_url)
+        raw = ""
+        for url in text_candidates:
+            try:
+                raw = self._download_text(url)
+                if raw.strip():
+                    break
+            except requests.RequestException as exc:
+                self.logger.info(f"pdf_source | skip text {url}: {exc}")
         if not raw.strip():
             raise RuntimeError(f"Empty text download for novel {novel_id}")
         text_to_pdf(raw, dest, title=title)
@@ -156,12 +178,36 @@ class NovelPdfSource:
     def _gutenberg_direct_formats(self, book_id: str) -> dict[str, str]:
         """Fallback when Gutendex is blocked on CI (403 from GitHub Actions IPs)."""
         return {
-            "application/pdf": f"https://www.gutenberg.org/files/{book_id}/{book_id}-0.pdf",
             "text/plain; charset=utf-8": (
                 f"https://www.gutenberg.org/cache/epub/{book_id}/pg{book_id}.txt"
             ),
             "text/html": f"https://www.gutenberg.org/cache/epub/{book_id}/pg{book_id}-h.htm",
         }
+
+    def _gutenberg_pdf_candidates(self, book_id: str) -> list[str]:
+        return [
+            f"https://www.gutenberg.org/files/{book_id}/{book_id}-pdf.pdf",
+            f"https://www.gutenberg.org/files/{book_id}/{book_id}-0.pdf",
+            f"https://www.gutenberg.org/files/{book_id}/{book_id}.pdf",
+        ]
+
+    def _gutenberg_text_candidates(self, book_id: str) -> list[str]:
+        return [
+            f"https://www.gutenberg.org/cache/epub/{book_id}/pg{book_id}.txt",
+            f"https://www.gutenberg.org/files/{book_id}/{book_id}-0.txt",
+            f"https://www.gutenberg.org/files/{book_id}/{book_id}.txt",
+        ]
+
+    def _try_download_candidates(self, urls: list[str], dest: Path) -> bool:
+        for url in urls:
+            try:
+                self._download_binary(url, dest)
+                if dest.exists() and dest.stat().st_size > 1000:
+                    return True
+            except requests.RequestException as exc:
+                self.logger.info(f"pdf_source | skip {url}: {exc}")
+            dest.unlink(missing_ok=True)
+        return False
 
     def _pick_url(self, formats: dict[str, str], mime_hints: tuple[str, ...]) -> str | None:
         # Exact / prefix match first

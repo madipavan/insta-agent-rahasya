@@ -303,10 +303,11 @@ class ReelAssembler:
                 f"[1:a]aloop=loop=-1:size=2e+09,aresample=44100,"
                 f"aformat=sample_fmts=fltp:channel_layouts=stereo,volume={bgm_volume}[bgm_raw];"
                 f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-                f"volume={voice_volume}[voice];"
-                "[bgm_raw][voice]sidechaincompress=threshold=0.015:ratio=4:attack=80:"
+                f"volume={voice_volume}[voice_pre];"
+                "[voice_pre]asplit=2[voice_mix][voice_sc];"
+                "[bgm_raw][voice_sc]sidechaincompress=threshold=0.015:ratio=4:attack=80:"
                 "release=800:makeup=2[bgm_ducked];"
-                "[voice][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0:"
+                "[voice_mix][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0:"
                 "normalize=0,alimiter=limit=0.98[aout]"
             ),
             "-map", "[aout]",

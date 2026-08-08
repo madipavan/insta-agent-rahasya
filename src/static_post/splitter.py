@@ -2,24 +2,9 @@
 
 from __future__ import annotations
 
-import re
+from src.utils.hindi_text import sanitize_hindi_text
 
-_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
-
-
-def sanitize_hindi_text(text: str) -> str:
-    """Remove stray non-Hindi characters that break fonts (e.g. Arabic letters)."""
-    cleaned: list[str] = []
-    for ch in text:
-        if _DEVANAGARI_RE.match(ch):
-            cleaned.append(ch)
-        elif ch.isascii() and (ch.isalnum() or ch in " .,!?-'\"()"):
-            cleaned.append(ch)
-        elif ch in "।॥":
-            cleaned.append(ch)
-        elif ch.isspace():
-            cleaned.append(" ")
-    return re.sub(r"\s+", " ", "".join(cleaned)).strip()
+__all__ = ["sanitize_hindi_text", "split_into_slides", "cap_slides", "split_into_slides_capped"]
 
 
 def split_into_slides(text: str, max_chars: int = 110, max_slides: int = 0) -> list[str]:
@@ -30,6 +15,8 @@ def split_into_slides(text: str, max_chars: int = 110, max_slides: int = 0) -> l
 
     if len(text) <= max_chars:
         return [text]
+
+    import re
 
     sentences = re.split(r"(?<=[।.!?])\s+", text)
     slides: list[str] = []

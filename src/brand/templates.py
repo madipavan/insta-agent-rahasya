@@ -9,6 +9,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 from src.config import AppConfig
+from src.utils.hindi_text import hindi_font_paths, normalize_hindi_for_render
 
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
 
@@ -25,28 +26,11 @@ class BrandTemplates:
         return bool(_DEVANAGARI_RE.search(text))
 
     def _get_hindi_font(self, size: int, bold: bool = True) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
-        quote_font = self.config.resolve_asset(self.config.brand.hindi_quote_font)
-        caption_font = self.config.resolve_asset(self.config.brand.caption_font)
-        bundled = self.config.resolve_asset(
-            "assets/fonts/NotoSansDevanagari-Bold.ttf" if bold else "assets/fonts/NotoSansDevanagari-Regular.ttf"
-        )
-        regular = self.config.resolve_asset("assets/fonts/NotoSansDevanagari-Regular.ttf")
-        candidates = [
-            quote_font,
-            caption_font,
-            bundled,
-            self.config.resolve_asset("assets/fonts/NotoSansDevanagari-Bold.ttf"),
-            regular,
-            Path("C:/Windows/Fonts/NirmalaB.ttf"),
-            Path("C:/Windows/Fonts/Nirmala.ttf"),
-            Path("C:/Windows/Fonts/mangal.ttf"),
-            Path("C:/Windows/Fonts/Mangal.ttf"),
-        ]
-        for path in candidates:
+        for path in hindi_font_paths(self.config, bold=bold):
             if path.exists():
                 return ImageFont.truetype(str(path), size)
         raise FileNotFoundError(
-            "No Hindi font found. Add Tiro or Anek fonts under assets/fonts/"
+            "No Hindi font found. Run: bash scripts/download_fonts.sh"
         )
 
     def _get_font(self, font_path: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -113,6 +97,7 @@ class BrandTemplates:
         slide_label: str = "",
     ) -> Image.Image:
         """Moody quote post — cinematic background, centered text, bottom-left watermark."""
+        quote = normalize_hindi_for_render(quote) if self._is_hindi(quote) else quote
         if background is not None:
             img = background.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
             img = ImageEnhance.Brightness(img).enhance(0.45)
@@ -308,7 +293,7 @@ class BrandTemplates:
             stroke_fill=(0, 0, 0),
         )
 
-        hook = (hook_text or "").strip()
+        hook = normalize_hindi_for_render((hook_text or "").strip()) if hook_text else ""
         if hook:
             hook_font = self._get_caption_font(52)
             wrapped = textwrap.fill(hook, width=22)

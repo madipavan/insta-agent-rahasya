@@ -53,7 +53,8 @@ X-GitHub-Api-Version: 2022-11-28
   "ref": "master",
   "inputs": {
     "skip_episodes": "",
-    "use_repo_state": "false"
+    "use_repo_state": "false",
+    "next_novel": "false"
   }
 }
 ```
@@ -68,6 +69,18 @@ X-GitHub-Api-Version: 2022-11-28
 ## Reset pipeline
 
 Trigger once with `"use_repo_state": "true"` in the body, or run workflow manually in GitHub Actions with that checkbox.
+
+## Skip to next novel
+
+In GitHub Actions → **Run workflow** → check **Skip current novel and start the next one in queue**.
+
+Or locally:
+
+```powershell
+python main.py run --next-novel --publish-now
+```
+
+This marks the current novel `abandoned`, wipes its DB rows, and activates the next queued novel (PDF + LLM batch runs for the new book).
 
 ## Test
 

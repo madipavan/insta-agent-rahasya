@@ -1,4 +1,4 @@
-"""Summarize novel PDF (direct multimodal) and batch-write all episode Hindi scripts."""
+"""Summarize novel PDF (text extract) and batch-write all episode Hindi scripts."""
 
 from __future__ import annotations
 

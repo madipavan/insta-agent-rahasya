@@ -40,6 +40,15 @@ def cmd_publish(args: argparse.Namespace) -> None:
 def cmd_run(args: argparse.Namespace) -> None:
     config = load_config()
     pipeline = Pipeline(config)
+    if getattr(args, "next_novel", False):
+        active = pipeline.queue.db.get_active_novel()
+        if active:
+            clean = not getattr(args, "keep_output", False)
+            novel = pipeline.queue.skip_to_next_novel(clean_output=clean)
+            print(f"Skipped novel: {active.title}")
+            print(f"Now active: {novel.title} by {novel.author}")
+        else:
+            print("No active novel to skip — continuing with queue.")
     bundle_id = pipeline.run()
     if getattr(args, "publish_now", False):
         config.min_publish_delay_hours = 0
@@ -399,6 +408,16 @@ def main() -> None:
         "--publish-now",
         action="store_true",
         help="Publish immediately after generate (skip min_publish_delay_hours)",
+    )
+    run_parser.add_argument(
+        "--next-novel",
+        action="store_true",
+        help="Abandon current novel and activate the next queued one before generating",
+    )
+    run_parser.add_argument(
+        "--keep-output",
+        action="store_true",
+        help="With --next-novel: keep output folders for the skipped novel",
     )
     run_parser.set_defaults(func=cmd_run)
     publish_parser = sub.add_parser(

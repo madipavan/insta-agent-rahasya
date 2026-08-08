@@ -91,11 +91,10 @@ class PathsConfig:
 @dataclass
 class AppConfig:
     brand: BrandConfig = field(default_factory=BrandConfig)
-    llm_provider: str = "modal"
+    llm_provider: str = "gemini"
     llm_fallback_providers: list[str] = field(
-        default_factory=lambda: ["gemini", "groq", "mistral"]
+        default_factory=lambda: ["groq", "mistral"]
     )
-    llm_model_modal: str = "Qwen/Qwen3.6-35B-A3B"
     llm_model_anthropic: str = "claude-sonnet-4-20250514"
     llm_model_openai: str = "gpt-4o"
     llm_model_grok: str = "grok-3-mini"
@@ -162,8 +161,6 @@ class AppConfig:
     tmdb_api_key: str = ""
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
-    modal_endpoint_url: str = ""
-    modal_api_key: str = ""
 
     def path(self, key: str) -> Path:
         value = getattr(self.paths, key)
@@ -191,11 +188,10 @@ def load_config(config_path: Path | None = None) -> AppConfig:
 
     config = AppConfig(
         brand=_merge_dataclass(BrandConfig, raw.get("brand", {})),
-        llm_provider=raw.get("llm_provider", "modal"),
+        llm_provider=raw.get("llm_provider", "gemini"),
         llm_fallback_providers=raw.get(
-            "llm_fallback_providers", ["gemini", "groq", "mistral"]
+            "llm_fallback_providers", ["groq", "mistral"]
         ),
-        llm_model_modal=raw.get("llm_model_modal", "Qwen/Qwen3.6-35B-A3B"),
         llm_model_anthropic=raw.get("llm_model_anthropic", "claude-sonnet-4-20250514"),
         llm_model_openai=raw.get("llm_model_openai", "gpt-4o"),
         llm_model_grok=raw.get("llm_model_grok", "grok-3-mini"),
@@ -263,7 +259,5 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     config.tmdb_api_key = os.getenv("TMDB_API_KEY", "")
     config.telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
     config.telegram_chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-    config.modal_endpoint_url = os.getenv("MODAL_ENDPOINT_URL", "").strip().rstrip("/")
-    config.modal_api_key = os.getenv("MODAL_API_KEY", "").strip()
 
     return config

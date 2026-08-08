@@ -6,6 +6,7 @@ import textwrap
 from pathlib import Path
 
 from src.config import AppConfig, ROOT_DIR
+from src.utils.hindi_text import hindi_font_paths, normalize_hindi_for_render
 from src.visuals.captions import CaptionSegment
 
 _ASS_FAMILY_NAMES = {
@@ -25,17 +26,11 @@ def _font_family_from_path(font_path: Path) -> str:
 
 
 def _resolve_caption_font(config: AppConfig) -> tuple[Path, str]:
-    candidates = [
-        config.resolve_asset(config.brand.caption_font),
-        ROOT_DIR / "assets/fonts/AnekDevanagari-ExtraBold.ttf",
-        ROOT_DIR / "assets/fonts/NotoSansDevanagari-Bold.ttf",
-        Path("C:/Windows/Fonts/NirmalaB.ttf"),
-        Path("C:/Windows/Fonts/mangal.ttf"),
-    ]
-    for path in candidates:
+    for path in hindi_font_paths(config, bold=True):
         if path.exists():
             return path, _font_family_from_path(path)
-    return candidates[0], "Anek Devanagari ExtraBold"
+    fallback = config.resolve_asset(config.brand.caption_font)
+    return fallback, "Anek Devanagari ExtraBold"
 
 
 def _format_ass_time(seconds: float) -> str:
@@ -87,11 +82,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     events: list[str] = []
     for seg in segments:
-        if not seg.text.strip():
+        text = normalize_hindi_for_render(seg.text.strip())
+        if not text:
             continue
         start = _format_ass_time(seg.start)
         end = _format_ass_time(max(seg.end, seg.start + 0.5))
-        text = _wrap_text(seg.text.strip())
+        text = _wrap_text(text)
         style = seg.style if seg.style in ("Default", "Hook") else "Default"
         events.append(f"Dialogue: 0,{start},{end},{style},,0,0,0,,{text}")
 

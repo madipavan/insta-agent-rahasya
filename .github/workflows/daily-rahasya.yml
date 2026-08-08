@@ -11,6 +11,10 @@ on:
         description: "Use data/rahasya.db from git (ignore pipeline-state artifact — for resets)"
         type: boolean
         default: false
+      next_novel:
+        description: "Skip current novel and start the next one in queue"
+        type: boolean
+        default: false
 
 concurrency:
   group: rahasya-${{ github.ref }}
@@ -138,7 +142,12 @@ jobs:
         run: python main.py status
 
       - name: Generate and publish episode
-        run: python main.py run --publish-now
+        run: |
+          ARGS="--publish-now"
+          if [ "${{ inputs.next_novel }}" = "true" ]; then
+            ARGS="$ARGS --next-novel"
+          fi
+          python main.py run $ARGS
 
       - name: Upload pipeline state
         if: always()

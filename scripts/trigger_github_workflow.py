@@ -32,6 +32,7 @@ def main() -> int:
         "inputs": {
             "skip_episodes": os.getenv("GITHUB_SKIP_EPISODES", ""),
             "use_repo_state": os.getenv("GITHUB_USE_REPO_STATE", "false"),
+            "next_novel": os.getenv("GITHUB_NEXT_NOVEL", "false"),
         },
     }
     resp = requests.post(

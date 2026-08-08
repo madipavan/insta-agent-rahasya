@@ -37,7 +37,7 @@ install_system_packages() {
   run_with_retry 3 timeout 600 sudo apt-get install -y -qq \
     -o Dpkg::Options::=--force-confdef \
     -o Dpkg::Options::=--force-confold \
-    ffmpeg fonts-noto-core fonts-noto-extra
+    ffmpeg fonts-noto-core fonts-noto-extra fonts-noto-devanagari
 }
 
 download_font() {
@@ -69,15 +69,7 @@ download_font() {
 }
 
 install_fonts() {
-  mkdir -p assets/fonts
-  download_font \
-    "assets/fonts/BebasNeue-Regular.ttf" \
-    "https://github.com/google/fonts/raw/main/ofl/bebasneue/BebasNeue-Regular.ttf" \
-    "https://raw.githubusercontent.com/google/fonts/main/ofl/bebasneue/BebasNeue-Regular.ttf"
-  download_font \
-    "assets/fonts/Inter-Regular.ttf" \
-    "https://github.com/google/fonts/raw/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf" \
-    "https://raw.githubusercontent.com/google/fonts/main/ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf"
+  bash scripts/download_fonts.sh
 }
 
 install_python_packages() {

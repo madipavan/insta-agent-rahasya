@@ -145,8 +145,10 @@ jobs:
         run: |
           ARGS="--publish-now"
           if [ "${{ inputs.next_novel }}" = "true" ]; then
+            echo "::notice::--next-novel enabled: abandoning current novel and switching queue"
             ARGS="$ARGS --next-novel"
           fi
+          echo "Running: python main.py run $ARGS"
           python main.py run $ARGS
 
       - name: Upload pipeline state

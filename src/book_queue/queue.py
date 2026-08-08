@@ -138,6 +138,10 @@ class BookQueue:
         self.ensure_queue()
         next_novel = self.db.get_next_queued_novel()
         if not next_novel:
+            added = self.discovery.run()
+            self.logger.info(f"discovery | added {added} novel(s) for skip")
+            next_novel = self.db.get_next_queued_novel()
+        if not next_novel:
             raise RuntimeError(
                 f"Cannot skip '{active.title}': no other novels in queue. "
                 "Add novels to data/novels_seed.json or disable --next-novel."

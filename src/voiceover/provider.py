@@ -40,17 +40,21 @@ class FallbackVoiceover:
         except requests.HTTPError as exc:
             code = exc.response.status_code if exc.response is not None else None
             if code in (401, 402, 403, 429):
-                detail = str(exc) if exc.args else f"HTTP {code}"
-                self.logger.warn(
-                    "voiceover",
-                    f"{self.primary_name} failed: {detail}",
-                )
-                self.logger.warn(
-                    "voiceover",
-                    f"Falling back to {self.fallback_name}.",
-                )
+                self._fallback(text, output_path, exc)
+                return self.fallback.generate(text, output_path)
+            if code is not None and code >= 500:
+                self._fallback(text, output_path, exc)
                 return self.fallback.generate(text, output_path)
             raise
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            self._fallback(text, output_path, exc)
+            return self.fallback.generate(text, output_path)
+
+    def _fallback(self, text: str, output_path: Path, exc: Exception) -> None:
+        del text, output_path
+        detail = str(exc) if exc.args else type(exc).__name__
+        self.logger.warn("voiceover", f"{self.primary_name} failed: {detail}")
+        self.logger.warn("voiceover", f"Falling back to {self.fallback_name}.")
 
 
 def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> VoiceoverProvider:

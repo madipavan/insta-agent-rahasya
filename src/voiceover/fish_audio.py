@@ -6,6 +6,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 
 import requests
@@ -25,6 +26,8 @@ _CLIFFHANGER_CUE = "[voice drops, tense whisper] "
 class FishAudioVoiceover(VoiceoverBase):
     API_URL = "https://api.fish.audio/v1/tts"
     CHUNK_SIZE = 1800
+    MAX_RETRIES = 4
+    RETRY_BASE_SEC = 3
 
     def generate(self, text: str, output_path: Path) -> Path:
         model = self.config.fish_audio_model or "s2.1-pro-free"
@@ -138,33 +141,60 @@ class FishAudioVoiceover(VoiceoverBase):
         if self.config.fish_audio_voice_id:
             payload["reference_id"] = self.config.fish_audio_voice_id
 
-        response = requests.post(
-            self.API_URL,
-            json=payload,
-            headers=headers,
-            timeout=300,
-        )
-        if not response.ok:
-            detail = ""
+        last_exc: Exception | None = None
+        for attempt in range(self.MAX_RETRIES):
             try:
-                body = response.json()
-                detail = body.get("message", "") or str(body)
-            except Exception:
-                detail = response.text[:200]
-
-            if response.status_code == 401:
-                raise requests.HTTPError(
-                    f"Fish Audio API key invalid (401). {detail}",
-                    response=response,
+                response = requests.post(
+                    self.API_URL,
+                    json=payload,
+                    headers=headers,
+                    timeout=300,
                 )
-            if response.status_code in (402, 429):
-                raise requests.HTTPError(
-                    f"Fish Audio {response.status_code}: {detail}",
-                    response=response,
-                )
-            response.raise_for_status()
+                if not response.ok:
+                    detail = ""
+                    try:
+                        body = response.json()
+                        detail = body.get("message", "") or str(body)
+                    except Exception:
+                        detail = response.text[:200]
 
-        output_path.write_bytes(response.content)
+                    if response.status_code == 401:
+                        raise requests.HTTPError(
+                            f"Fish Audio API key invalid (401). {detail}",
+                            response=response,
+                        )
+                    if response.status_code in (402, 429):
+                        raise requests.HTTPError(
+                            f"Fish Audio {response.status_code}: {detail}",
+                            response=response,
+                        )
+                    if response.status_code >= 500 and attempt < self.MAX_RETRIES - 1:
+                        wait = self.RETRY_BASE_SEC * (2 ** attempt)
+                        self.logger.warn(
+                            "voiceover",
+                            f"fish-audio {response.status_code} — retry in {wait}s",
+                        )
+                        time.sleep(wait)
+                        continue
+                    response.raise_for_status()
+
+                output_path.write_bytes(response.content)
+                return
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                last_exc = exc
+                if attempt < self.MAX_RETRIES - 1:
+                    wait = self.RETRY_BASE_SEC * (2 ** attempt)
+                    self.logger.warn(
+                        "voiceover",
+                        f"fish-audio connection error — retry in {wait}s ({attempt + 1}/"
+                        f"{self.MAX_RETRIES})",
+                    )
+                    time.sleep(wait)
+                    continue
+                raise
+
+        if last_exc:
+            raise last_exc
 
     def _split_sentences(self, text: str) -> list[str]:
         parts = re.split(r"(?<=[।.!?…])\s+", text.strip())

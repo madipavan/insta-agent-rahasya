@@ -100,6 +100,10 @@ class NovelPdfSource:
 
         book_id = parse_gutenberg_book_id(source_link)
         formats = self._fetch_formats(book_id) if book_id else {}
+        if not formats and book_id:
+            formats = self._gutenberg_direct_formats(book_id)
+            if formats:
+                self.logger.info(f"pdf_source | using direct Gutenberg URLs for book {book_id}")
         pdf_url = self._pick_url(formats, _PDF_MIME_HINTS)
         if pdf_url:
             self.logger.start("pdf_source", f"downloading PDF for novel {novel_id}")
@@ -148,6 +152,16 @@ class NovelPdfSource:
         except requests.RequestException as exc:
             self.logger.warn("pdf_source", f"gutendex formats failed: {exc}")
             return {}
+
+    def _gutenberg_direct_formats(self, book_id: str) -> dict[str, str]:
+        """Fallback when Gutendex is blocked on CI (403 from GitHub Actions IPs)."""
+        return {
+            "application/pdf": f"https://www.gutenberg.org/files/{book_id}/{book_id}-0.pdf",
+            "text/plain; charset=utf-8": (
+                f"https://www.gutenberg.org/cache/epub/{book_id}/pg{book_id}.txt"
+            ),
+            "text/html": f"https://www.gutenberg.org/cache/epub/{book_id}/pg{book_id}-h.htm",
+        }
 
     def _pick_url(self, formats: dict[str, str], mime_hints: tuple[str, ...]) -> str | None:
         # Exact / prefix match first

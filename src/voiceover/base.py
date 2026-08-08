@@ -34,28 +34,50 @@ class VoiceoverBase:
             f"duration {duration:.1f}s exceeds {hard_cap:.0f}s — trimming audio",
         )
         trimmed = audio_path.with_name(f"{audio_path.stem}_trimmed{audio_path.suffix}")
-        result = subprocess.run(
-            [
+        # Stream-copy into the same container (mp3→aac into .mp3 fails on Windows ffmpeg).
+        cmd = [
+            get_ffmpeg_exe(),
+            "-y",
+            "-i",
+            str(audio_path),
+            "-t",
+            f"{hard_cap:.3f}",
+            "-c",
+            "copy",
+            str(trimmed),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0 or not trimmed.exists():
+            # Fallback: re-encode with a codec that matches the file extension.
+            codec_args = self._reencode_args(audio_path.suffix)
+            cmd = [
                 get_ffmpeg_exe(),
                 "-y",
                 "-i",
                 str(audio_path),
                 "-t",
-                str(hard_cap),
-                "-c:a",
-                "aac",
-                "-b:a",
-                "128k",
+                f"{hard_cap:.3f}",
+                *codec_args,
                 str(trimmed),
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"voiceover trim failed: {result.stderr[-500:]}")
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0 or not trimmed.exists():
+                err = (result.stderr or result.stdout or "")[-800:]
+                raise RuntimeError(f"voiceover trim failed: {err}")
+
         shutil.move(str(trimmed), str(audio_path))
         return self._get_duration(audio_path)
+
+    @staticmethod
+    def _reencode_args(suffix: str) -> list[str]:
+        ext = (suffix or "").lower()
+        if ext == ".mp3":
+            return ["-c:a", "libmp3lame", "-q:a", "4"]
+        if ext in (".m4a", ".aac", ".mp4"):
+            return ["-c:a", "aac", "-b:a", "128k"]
+        if ext == ".wav":
+            return ["-c:a", "pcm_s16le"]
+        return ["-c:a", "libmp3lame", "-q:a", "4"]
 
     def _check_duration(self, duration: float) -> None:
         target_min = self.config.script_min_seconds

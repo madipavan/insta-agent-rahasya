@@ -15,11 +15,12 @@ brand:
   intro_duration_sec: 1.0
   outro_duration_sec: 1.0
 
-llm_provider: grok
+llm_provider: modal
 llm_fallback_providers:
   - gemini
   - groq
   - mistral
+llm_model_modal: Qwen/Qwen3.6-35B-A3B
 llm_model_grok: grok-3-mini
 llm_model_groq: llama-3.3-70b-versatile
 llm_model_gemini: gemini-2.5-flash

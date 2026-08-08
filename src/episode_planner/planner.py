@@ -106,12 +106,9 @@ class EpisodePlanner:
                 novel.id, novel.title, novel.source_link
             )
             self.db.set_novel_pdf_path(novel.id, str(pdf_path))
-            text = self.pdf_source.load_text(pdf_path)
-            self.logger.info(
-                f"episode_planner | extracted {len(text)} chars from PDF"
-            )
+            self.logger.info(f"episode_planner | sending PDF to LLM: {pdf_path}")
             return self.batch_crew.build_full_package(
-                novel, text, episode_count, ranges
+                novel, pdf_path, episode_count, ranges
             )
         except Exception as exc:
             self.logger.warn("episode_planner", f"PDF/batch pipeline failed: {exc}")

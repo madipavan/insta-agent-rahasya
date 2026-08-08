@@ -36,15 +36,21 @@ def validate_script_dict(data: dict[str, Any], min_chars: int, max_chars: int) -
 
 def normalize_script_dict(data: dict[str, Any], max_chars: int) -> dict[str, Any]:
     """Trim voiceover fields and mirror episode_only_script."""
+    from src.book_queue.models import ScriptOutput
+
     out = dict(data)
     body = trim_to_limit(script_body(out), max_chars)
     out["voiceover_script"] = body
     out["episode_only_script"] = body
     out["recap_opener"] = ""
+    out["hook"] = ScriptOutput._coerce_text(out.get("hook", ""))
+    out["cliffhanger"] = ScriptOutput._coerce_text(out.get("cliffhanger", ""))
+    out["caption_hook"] = ScriptOutput._coerce_text(out.get("caption_hook", ""))
+    out["caption_teaser"] = ScriptOutput._coerce_text(out.get("caption_teaser", ""))
+    out["static_post_text"] = ScriptOutput._coerce_text(out.get("static_post_text", ""))
+    out["on_screen_text"] = ScriptOutput._coerce_text_list(out.get("on_screen_text", []))
     if not isinstance(out.get("stock_keywords"), list):
         out["stock_keywords"] = ["cinematic", "dark", "mystery"]
-    if not isinstance(out.get("on_screen_text"), list):
-        out["on_screen_text"] = []
     return out
 
 

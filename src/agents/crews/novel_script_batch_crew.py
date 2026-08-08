@@ -1,8 +1,9 @@
-"""Summarize novel PDF text and batch-write all episode Hindi scripts."""
+"""Summarize novel PDF (direct multimodal) and batch-write all episode Hindi scripts."""
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -20,11 +21,10 @@ from src.script_gen.limits import script_char_limits
 from src.utils.json_parse import parse_llm_json
 from src.utils.llm_text import extract_llm_text
 
-CHUNK_CHARS = 28000
 BATCH_SIZE = 3
 
 SUMMARIZE_SYSTEM = """You are a Story Analyst for Instagram suspense reels.
-Read the novel excerpt and produce an original paraphrase summary — never quote the book.
+Read the attached novel PDF and produce an original paraphrase summary — never quote the book.
 Focus on characters, mysteries, stakes, and retention-worthy twists.
 Output valid JSON only."""
 
@@ -48,7 +48,7 @@ Rules:
 
 
 class NovelScriptBatchCrew:
-    """PDF text → summarize → plan ≤12 beats → write all Hindi scripts."""
+    """PDF → summarize (multimodal) → plan ≤12 beats → write all Hindi scripts."""
 
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
         self.config = config
@@ -58,11 +58,11 @@ class NovelScriptBatchCrew:
     def build_full_package(
         self,
         novel: Novel,
-        novel_text: str,
+        pdf_path: Path,
         episode_count: int,
         chapter_ranges: list[tuple[int, int]],
     ) -> dict[str, Any]:
-        summary = self.summarize_novel(novel, novel_text)
+        summary = self.summarize_novel_pdf(novel, pdf_path)
         arc = self.plan_episodes(novel, summary, episode_count, chapter_ranges)
         scripts = self.write_all_scripts(novel, summary, arc.get("episodes", []), episode_count)
         return {
@@ -73,29 +73,24 @@ class NovelScriptBatchCrew:
             "episodes": scripts,
         }
 
-    def summarize_novel(self, novel: Novel, novel_text: str) -> dict[str, Any]:
-        chunks = self._chunk_text(novel_text)
-        partials: list[str] = []
-        for idx, chunk in enumerate(chunks, start=1):
-            self.logger.info(f"batch_crew | summarize chunk {idx}/{len(chunks)}")
-            prompt = (
-                f"Novel: {novel.title} by {novel.author}\n"
-                f"Chunk {idx}/{len(chunks)}:\n{chunk}\n\n"
-                "Return JSON keys: chunk_summary (6-10 sentences, original paraphrase)."
-            )
-            data = self._invoke_json(SUMMARIZE_SYSTEM, prompt)
-            partials.append(data.get("chunk_summary") or "")
-
-        merge_prompt = (
+    def summarize_novel_pdf(self, novel: Novel, pdf_path: Path) -> dict[str, Any]:
+        """Send the PDF file directly to Gemini (no local text extraction)."""
+        prompt = (
             f"Novel: {novel.title} by {novel.author} ({novel.country})\n"
-            "Combine these chunk summaries into a full novel bible.\n"
-            "Return JSON keys: novel_logline, story_summary (8-12 sentences), "
-            "retention_strategy (how to keep Instagram viewers bingeing across episodes), "
-            "key_characters (array of names).\n\n"
-            f"Chunks:\n{json.dumps(partials, ensure_ascii=False)}"
+            "Read the attached PDF once and return JSON keys:\n"
+            "novel_logline, story_summary (8-12 sentences, original paraphrase),\n"
+            "retention_strategy (how to keep Instagram viewers bingeing),\n"
+            "key_characters (array of names).\n"
+            "Do not quote the book verbatim."
         )
-        self.logger.info("batch_crew | merge story bible")
-        return self._invoke_json(SUMMARIZE_SYSTEM, merge_prompt)
+        self.logger.info(f"batch_crew | summarize PDF directly ({pdf_path.name})")
+        data = self._invoke_json_with_pdf(SUMMARIZE_SYSTEM, prompt, pdf_path)
+        if data.get("story_summary") or data.get("novel_logline"):
+            return data
+        raise RuntimeError(
+            "PDF summarize returned empty story bible — "
+            "ensure GEMINI_API_KEY is set (PDF multimodal requires Gemini)."
+        )
 
     def plan_episodes(
         self,
@@ -300,27 +295,51 @@ class NovelScriptBatchCrew:
                 return normalize_script_dict(draft, max_chars)
         return script
 
-    def _chunk_text(self, text: str) -> list[str]:
-        text = (text or "").strip()
+    def _invoke_json_with_pdf(self, system: str, prompt: str, pdf_path: Path) -> dict[str, Any]:
+        """Gemini multimodal: attach PDF bytes (no local text extraction)."""
+        if not self.config.gemini_api_key:
+            raise RuntimeError("GEMINI_API_KEY required to send novel PDF directly to the LLM")
+
+        from google import genai
+        from google.genai import types
+
+        pdf_bytes = Path(pdf_path).read_bytes()
+        if len(pdf_bytes) < 100:
+            raise RuntimeError(f"PDF too small or empty: {pdf_path}")
+
+        client = genai.Client(api_key=self.config.gemini_api_key)
+        model = self.config.llm_model_gemini or "gemini-2.5-flash"
+        self.logger.info(
+            f"batch_crew | gemini PDF upload {len(pdf_bytes)} bytes via {model}"
+        )
+        response = client.models.generate_content(
+            model=model,
+            contents=[
+                types.Content(
+                    role="user",
+                    parts=[
+                        types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"),
+                        types.Part.from_text(text=f"{system}\n\n{prompt}"),
+                    ],
+                )
+            ],
+            config=types.GenerateContentConfig(
+                temperature=0.4,
+                max_output_tokens=8192,
+                response_mime_type="application/json",
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+            ),
+        )
+        text = (response.text or "").strip()
         if not text:
-            return [""]
-        if len(text) <= CHUNK_CHARS:
-            return [text]
-        chunks: list[str] = []
-        start = 0
-        while start < len(text):
-            end = min(len(text), start + CHUNK_CHARS)
-            if end < len(text):
-                # break on paragraph if possible
-                cut = text.rfind("\n\n", start + CHUNK_CHARS // 2, end)
-                if cut > start:
-                    end = cut
-            chunks.append(text[start:end].strip())
-            start = end
-        return [c for c in chunks if c] or [text[:CHUNK_CHARS]]
+            return {}
+        try:
+            return parse_llm_json(text)
+        except Exception as exc:
+            self.logger.warn("batch_crew", f"PDF summarize JSON parse failed: {exc}")
+            return {}
 
     def _invoke_json(self, system: str, prompt: str, max_tokens: int = 8192) -> dict[str, Any]:
-        # max_tokens is advisory; LangChain models may ignore depending on provider binding
         _ = max_tokens
         resp = self.llm.invoke(
             [SystemMessage(content=system), HumanMessage(content=prompt)]

@@ -55,7 +55,7 @@ class FallbackChatModel:
                     if self.logger:
                         self.logger.warn(
                             "llm",
-                            f"{provider} limit hit — switching to {nxt}",
+                            f"{provider} unavailable ({exc.__class__.__name__}) — switching to {nxt}",
                         )
                     continue
                 raise

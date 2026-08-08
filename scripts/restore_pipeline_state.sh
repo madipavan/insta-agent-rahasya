@@ -43,6 +43,11 @@ if gh run download "$RUN_ID" -n pipeline-state -D "$TMP" 2>/dev/null; then
   for cp in "$TMP/data/checkpoint.json" "$TMP/checkpoint.json"; do
     [ -f "$cp" ] && cp -f "$cp" data/checkpoint.json && echo "[restore] restored data/checkpoint.json" && break
   done
+  if [ -d "$TMP/data/novels" ]; then
+    mkdir -p data/novels
+    cp -a "$TMP/data/novels/." data/novels/
+    echo "[restore] restored data/novels/ (BGM cache)"
+  fi
   if [ -d "$TMP/output/review" ]; then
     cp -a "$TMP/output/review/." output/review/
     echo "[restore] restored output/review/"

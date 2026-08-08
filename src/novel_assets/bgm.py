@@ -366,7 +366,7 @@ def _generate_ambient_track(output: Path, freqs: tuple[int, ...], noise_color: s
 
     inputs = [
         "-f", "lavfi", "-i",
-        f"anoisesrc=color={noise_color}:duration={duration}:sample_rate=44100:amplitude=0.06",
+        f"anoisesrc=color={noise_color}:duration={duration}:sample_rate=44100:amplitude=0.12",
     ]
     filters: list[str] = ["[0:a]lowpass=f=500[noise]"]
     mix_inputs = ["[noise]"]
@@ -376,7 +376,7 @@ def _generate_ambient_track(output: Path, freqs: tuple[int, ...], noise_color: s
             continue
         idx = i + 1
         inputs.extend(["-f", "lavfi", "-i", f"sine=frequency={freq}:duration={duration}:sample_rate=44100"])
-        vol = 0.12 - i * 0.02
+        vol = 0.22 - i * 0.04
         filters.append(f"[{idx}:a]volume={vol}[s{idx}]")
         mix_inputs.append(f"[s{idx}]")
 

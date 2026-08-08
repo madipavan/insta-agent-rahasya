@@ -82,12 +82,15 @@ class NovelAssetManager:
         cached = novel_dir / "bgm.mp3"
         meta = novel_dir / "bgm.json"
 
-        if cached.exists() and meta.exists() and not is_synthetic_bgm(cached):
-            return cached
-
-        if cached.exists() and is_synthetic_bgm(cached):
-            cached.unlink(missing_ok=True)
-            meta.unlink(missing_ok=True)
+        if cached.exists():
+            if meta.exists() and not is_synthetic_bgm(cached):
+                return cached
+            if meta.exists() and is_synthetic_bgm(cached):
+                # Keep generated pad — CI often cannot reach YouTube every run.
+                self.logger.info(f"Using synthetic BGM pad for '{novel.title}'")
+                return cached
+            if cached.stat().st_size > 900_000:
+                return cached
 
         result = fetch_novel_bgm(
             novel, keywords, cached, self.logger, library_dir=self.bgm_library

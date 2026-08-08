@@ -109,7 +109,8 @@ class SfxMixer:
         n_inputs = len(mix_labels)
         filter_complex = (
             ";".join(filter_parts)
-            + f";{''.join(mix_labels)}amix=inputs={n_inputs}:duration=first:dropout_transition=0"
+            + f";{''.join(mix_labels)}amix=inputs={n_inputs}:duration=first:"
+            "dropout_transition=0:normalize=0,alimiter=limit=0.98"
         )
 
         cmd = [

@@ -142,6 +142,10 @@ class ReelAssembler:
                 self.logger.info(
                     f"reel_assembly | BGM at {vol:.0%}, voice at {self.config.video.voiceover_volume:.0%}"
                 )
+            elif bgm_path:
+                self.logger.warn("reel_assembly", f"BGM path missing on disk: {bgm_path}")
+            else:
+                self.logger.warn("reel_assembly", "no BGM assigned — voice-only reel")
 
             self._run_ffmpeg([
                 "-y", "-i", str(combined), "-i", str(final_audio),
@@ -266,18 +270,25 @@ class ReelAssembler:
             import shutil
             shutil.copy(input_audio, output_audio)
             return
+        # alimiter prevents clipping after gain; dynaudnorm lifts quiet TTS sources
         self._run_ffmpeg([
             "-y", "-i", str(input_audio),
-            "-af", f"volume={gain:.2f}",
+            "-af", f"dynaudnorm=f=150:g=15,volume={gain:.2f},alimiter=limit=0.95",
             "-c:a", "aac", str(output_audio),
         ])
 
     def _mix_bgm(self, voiceover: Path, bgm: Path, output: Path, bgm_volume: float = 0.12) -> None:
         """Mix novel BGM under voiceover at low volume (voice already boosted)."""
+        # normalize=0 keeps voice level — default amix divides each input by N and
+        # makes BGM inaudible / crushes narration when SFX were mixed earlier.
         self._run_ffmpeg([
             "-y", "-i", str(voiceover), "-stream_loop", "-1", "-i", str(bgm),
             "-filter_complex",
-            f"[1:a]volume={bgm_volume}[bgm];[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2",
+            (
+                f"[1:a]volume={bgm_volume}[bgm];"
+                f"[0:a][bgm]amix=inputs=2:duration=first:dropout_transition=2:normalize=0,"
+                "alimiter=limit=0.98"
+            ),
             "-c:a", "aac", str(output),
         ])
 

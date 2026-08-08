@@ -157,6 +157,8 @@ jobs:
           path: |
             data/rahasya.db
             data/checkpoint.json
+            data/novels/**/bgm.mp3
+            data/novels/**/bgm.json
             output/review/
           retention-days: 90
           if-no-files-found: ignore

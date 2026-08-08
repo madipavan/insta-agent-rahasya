@@ -15,10 +15,9 @@ RUN_ID=""
 for id in $(gh run list \
   --workflow=daily-rahasya.yml \
   --branch="$BRANCH" \
-  --status=success \
-  --limit=15 \
-  --json databaseId \
-  -q '.[].databaseId' 2>/dev/null); do
+  --limit=20 \
+  --json databaseId,conclusion \
+  -q '.[] | select(.conclusion != "cancelled" and .conclusion != "skipped") | .databaseId' 2>/dev/null); do
   [ -z "$id" ] && continue
   TMP="$(mktemp -d)"
   if gh run download "$id" -n pipeline-state -D "$TMP" 2>/dev/null; then

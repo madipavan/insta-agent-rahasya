@@ -81,7 +81,7 @@ def cmd_status(_: argparse.Namespace) -> None:
 def cmd_queue(_: argparse.Namespace) -> None:
     config = load_config()
     db = Database(config.path("db_path"))
-    for status in ("active", "queued", "completed"):
+    for status in ("active", "queued", "completed", "abandoned"):
         novels = db.list_novels(status)
         if novels:
             print(f"\n=== {status.upper()} ===")

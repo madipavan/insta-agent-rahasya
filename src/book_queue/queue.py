@@ -135,17 +135,20 @@ class BookQueue:
         if not active:
             raise RuntimeError("No active novel to skip")
 
+        self.ensure_queue()
+        next_novel = self.db.get_next_queued_novel()
+        if not next_novel:
+            raise RuntimeError(
+                f"Cannot skip '{active.title}': no other novels in queue. "
+                "Add novels to data/novels_seed.json or disable --next-novel."
+            )
+
         self.logger.info(f"Skipping novel: {active.title} (id={active.id})")
         self.db.set_novel_status(active.id, "abandoned")
         self.db.delete_novel_data(active.id)
 
         if clean_output:
             self._clean_novel_output(active)
-
-        self.ensure_queue()
-        next_novel = self.db.get_next_queued_novel()
-        if not next_novel:
-            raise RuntimeError("No novels left in queue after skip")
 
         self.db.set_novel_status(next_novel.id, "active")
         self.planner.create_outline(next_novel)

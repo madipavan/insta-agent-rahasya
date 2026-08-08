@@ -47,6 +47,16 @@ def load_checkpoint(data_dir: Path) -> PipelineCheckpoint | None:
         return None
 
 
+def reset_checkpoint_for_novel(data_dir: Path, novel_id: int, novel_title: str) -> None:
+    """Point checkpoint at a new novel with no completed episodes (used after --next-novel)."""
+    data_dir.mkdir(parents=True, exist_ok=True)
+    cp = PipelineCheckpoint(novel_id=novel_id, novel_title=novel_title, completed_episodes=[])
+    checkpoint_path(data_dir).write_text(
+        json.dumps(cp.to_dict(), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
 def save_checkpoint(
     data_dir: Path,
     *,
@@ -56,7 +66,10 @@ def save_checkpoint(
 ) -> None:
     data_dir.mkdir(parents=True, exist_ok=True)
     existing = load_checkpoint(data_dir)
-    completed = set(existing.completed_episodes if existing else [])
+    if existing and existing.novel_id == novel_id:
+        completed = set(existing.completed_episodes)
+    else:
+        completed = set()
     completed.add(episode_num)
     cp = PipelineCheckpoint(
         novel_id=novel_id,

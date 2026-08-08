@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.book_queue.checkpoint import apply_checkpoint_to_db, save_checkpoint
+from src.book_queue.checkpoint import apply_checkpoint_to_db, reset_checkpoint_for_novel, save_checkpoint
 from src.book_queue.discovery import NovelDiscovery
 from src.book_queue.models import EpisodeContext, Novel
 from src.book_queue.store import Database
@@ -159,7 +159,13 @@ class BookQueue:
         activated = self.db.get_novel(next_novel.id)
         if not activated:
             raise RuntimeError("Failed to activate next novel")
-        self.logger.info(f"Activated next novel: {activated.title} by {activated.author}")
+        reset_checkpoint_for_novel(
+            self.config.path("data_dir"), activated.id, activated.title
+        )
+        self.logger.info(
+            f"Activated next novel: {activated.title} by {activated.author} "
+            f"(previous '{active.title}' abandoned — will not generate again)"
+        )
         return activated
 
     def _clean_novel_output(self, novel: Novel) -> None:

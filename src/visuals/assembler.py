@@ -143,7 +143,7 @@ class ReelAssembler:
                     voice_volume=voice_vol,
                 )
                 final_audio = mixed
-                self._verify_bgm_audible(mixed, intro_dur)
+                self._verify_bgm_audible(mixed, padded_audio, intro_dur)
                 self.logger.info(
                     f"reel_assembly | BGM at {vol:.0%}, voice at {voice_vol:.0%}"
                 )
@@ -295,7 +295,7 @@ class ReelAssembler:
         bgm_volume: float = 0.35,
         voice_volume: float = 1.4,
     ) -> None:
-        """Mix BGM under voice with sidechain ducking so underscore stays audible."""
+        """Mix looping BGM under voice with light ducking so underscore stays audible."""
         self._run_ffmpeg([
             "-y", "-i", str(voiceover), "-i", str(bgm),
             "-filter_complex",
@@ -305,8 +305,8 @@ class ReelAssembler:
                 f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
                 f"volume={voice_volume}[voice_pre];"
                 "[voice_pre]asplit=2[voice_mix][voice_sc];"
-                "[bgm_raw][voice_sc]sidechaincompress=threshold=0.015:ratio=4:attack=80:"
-                "release=800:makeup=2[bgm_ducked];"
+                "[bgm_raw][voice_sc]sidechaincompress=threshold=0.08:ratio=2:attack=120:"
+                "release=600:makeup=1.5[bgm_ducked];"
                 "[voice_mix][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0:"
                 "normalize=0,alimiter=limit=0.98[aout]"
             ),
@@ -334,20 +334,41 @@ class ReelAssembler:
                 return float(match.group(1))
         return None
 
-    def _verify_bgm_audible(self, mixed_audio: Path, intro_dur: float) -> None:
-        """Warn if BGM is too quiet during the intro (voice-silent) segment."""
+    def _verify_bgm_audible(
+        self, mixed_audio: Path, voice_only_audio: Path, intro_dur: float,
+    ) -> None:
+        """Warn if BGM is too quiet during intro or under narration."""
         check_start = max(0.05, intro_dur * 0.15)
-        mean_db = self._measure_mean_volume(mixed_audio, start_sec=check_start, duration_sec=0.6)
-        if mean_db is None:
+        intro_db = self._measure_mean_volume(mixed_audio, start_sec=check_start, duration_sec=0.6)
+        if intro_db is None:
             self.logger.warn("reel_assembly", "BGM intro check skipped (volumedetect failed)")
             return
-        if mean_db < -35.0:
+        if intro_db < -35.0:
             self.logger.warn(
                 "reel_assembly",
-                f"BGM intro check: mean={mean_db:.1f}dB — BGM may be inaudible on Instagram",
+                f"BGM intro check: mean={intro_db:.1f}dB — BGM may be inaudible on Instagram",
             )
         else:
-            self.logger.info(f"reel_assembly | BGM intro check: mean={mean_db:.1f}dB (ok)")
+            self.logger.info(f"reel_assembly | BGM intro check: mean={intro_db:.1f}dB (ok)")
+
+        voice_start = intro_dur + 6.0
+        mixed_voice_db = self._measure_mean_volume(
+            mixed_audio, start_sec=voice_start, duration_sec=1.0,
+        )
+        voice_only_db = self._measure_mean_volume(
+            voice_only_audio, start_sec=voice_start, duration_sec=1.0,
+        )
+        if mixed_voice_db is not None and voice_only_db is not None:
+            delta = mixed_voice_db - voice_only_db
+            if delta < 1.5:
+                self.logger.warn(
+                    "reel_assembly",
+                    f"BGM under-voice check: delta={delta:+.1f}dB — underscore may be inaudible",
+                )
+            else:
+                self.logger.info(
+                    f"reel_assembly | BGM under-voice check: delta={delta:+.1f}dB (ok)"
+                )
 
     def _run_ffmpeg(self, args: list[str]) -> None:
         cmd = [get_ffmpeg_exe(), *args]

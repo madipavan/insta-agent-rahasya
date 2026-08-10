@@ -305,13 +305,13 @@ class ReelAssembler:
         voice_volume: float = 1.1,
         bgm_weight: float = 1.0,
     ) -> None:
-        """Loop BGM under voice as a constant bed (no sidechain ducking)."""
+        """Loop BGM under voice as a constant bed (stream_loop — reliable on CI ffmpeg)."""
         self._run_ffmpeg([
-            "-y", "-i", str(voiceover), "-i", str(bgm),
+            "-y", "-i", str(voiceover), "-stream_loop", "-1", "-i", str(bgm),
             "-filter_complex",
             (
-                f"[1:a]aloop=loop=-1:size=2e+09,aresample=44100,"
-                f"aformat=sample_fmts=fltp:channel_layouts=stereo,volume={bgm_volume}[bgm_raw];"
+                f"[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
+                f"volume={bgm_volume}[bgm_raw];"
                 f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
                 f"volume={voice_volume}[voice];"
                 f"[voice][bgm_raw]amix=inputs=2:duration=first:dropout_transition=2:"

@@ -14,6 +14,7 @@ import requests
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.script_gen.post_details import PostDetails
+from src.visuals.bgm_audio import probe_audio_codec
 
 
 @dataclass
@@ -774,34 +775,6 @@ class MetaScheduler:
                 f"rupload progress bytes_transferred={transferred}",
             )
 
-    def _probe_audio_codec(self, video_path: Path) -> str | None:
-        import subprocess
-
-        from src.utils.ffmpeg_path import get_ffmpeg_exe
-
-        probe = subprocess.run(
-            [
-                get_ffmpeg_exe(),
-                "-hide_banner",
-                "-print_format",
-                "json",
-                "-show_streams",
-                str(video_path),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if probe.returncode != 0 or not probe.stdout:
-            return None
-        try:
-            info = json.loads(probe.stdout)
-        except json.JSONDecodeError:
-            return None
-        for stream in info.get("streams", []):
-            if stream.get("codec_type") == "audio":
-                return stream.get("codec_name")
-        return None
-
     def _prepare_reel_for_instagram(self, video_path: Path) -> Path:
         """Re-encode to H.264/AAC + faststart and enforce Instagram reel size/duration caps."""
         import subprocess
@@ -825,7 +798,7 @@ class MetaScheduler:
             "scale=1080:1920:force_original_aspect_ratio=decrease,"
             "pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
         )
-        audio_codec = self._probe_audio_codec(video_path)
+        audio_codec = probe_audio_codec(video_path)
         preserve_audio = audio_codec == "aac"
         if preserve_audio:
             self.logger.info("meta | preserving assembled AAC audio (keeps BGM bed intact)")

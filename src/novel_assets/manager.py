@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -10,7 +11,13 @@ from src.book_queue.models import Novel
 from src.book_queue.store import Database
 from src.brand.templates import BrandTemplates
 from src.config import AppConfig
-from src.novel_assets.bgm import fetch_novel_bgm, is_synthetic_bgm
+from src.novel_assets.bgm import (
+    _build_search_query,
+    _generate_novel_pad,
+    _write_meta,
+    fetch_novel_bgm,
+    is_synthetic_bgm,
+)
 from src.pipeline.logger import PipelineLogger
 from src.visuals.stock import StockResolver
 
@@ -95,9 +102,22 @@ class NovelAssetManager:
         result = fetch_novel_bgm(
             novel, keywords, cached, self.logger, library_dir=self.bgm_library
         )
-        if result:
+        if result and result.exists():
             self.logger.info(f"Assigned BGM for '{novel.title}'")
-        return result
+            return result
+
+        try:
+            query = _build_search_query(novel, keywords)
+            _generate_novel_pad(cached, novel)
+            _write_meta(cached, novel, query, source="synthetic")
+            self.logger.warn(
+                "novel_assets",
+                f"BGM download failed — generated synthetic pad for '{novel.title}'",
+            )
+            return cached
+        except (OSError, subprocess.CalledProcessError) as exc:
+            self.logger.warn("novel_assets", f"BGM unavailable for '{novel.title}': {exc}")
+            return None
 
     def _ensure_thumbnail_base(
         self, novel: Novel, novel_dir: Path, keywords: list[str]

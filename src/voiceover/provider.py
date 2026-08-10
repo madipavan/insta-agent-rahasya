@@ -50,6 +50,12 @@ class FallbackVoiceover:
         except (requests.ConnectionError, requests.Timeout) as exc:
             self._fallback(text, output_path, exc)
             return self.fallback.generate(text, output_path)
+        except ValueError as exc:
+            msg = str(exc).lower()
+            if "api_key not set" in msg or "voice_id not set" in msg:
+                self._fallback(text, output_path, exc)
+                return self.fallback.generate(text, output_path)
+            raise
 
     def _fallback(self, text: str, output_path: Path, exc: Exception) -> None:
         del text, output_path
@@ -69,6 +75,25 @@ def _maybe_cache(
     return CachingVoiceover(provider, config, logger, name)
 
 
+def _build_tts_fallback_chain(
+    config: AppConfig,
+    logger: PipelineLogger,
+    edge: EdgeTTSVoiceover,
+) -> tuple[VoiceoverProvider, str]:
+    chain: VoiceoverProvider = edge
+    label = "edge-tts"
+    if config.sarvam_api_key and config.sarvam_fallback:
+        chain = FallbackVoiceover(
+            _maybe_cache(SarvamVoiceover(config, logger), config, logger, "sarvam"),
+            edge,
+            logger,
+            "sarvam",
+            "edge-tts",
+        )
+        label = "sarvam"
+    return chain, label
+
+
 def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> VoiceoverProvider:
     provider = config.voice_provider.lower()
     fallback = EdgeTTSVoiceover(config, logger)
@@ -80,13 +105,7 @@ def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> Voiceov
         fish = _maybe_cache(FishAudioVoiceover(config, logger), config, logger, "fish-audio")
         if not config.fish_audio_fallback:
             return fish
-        chain: VoiceoverProvider = fallback
-        fallback_label = "edge-tts"
-        if config.sarvam_api_key and config.sarvam_fallback:
-            chain = FallbackVoiceover(
-                SarvamVoiceover(config, logger), fallback, logger, "sarvam", "edge-tts"
-            )
-            fallback_label = "sarvam"
+        chain, fallback_label = _build_tts_fallback_chain(config, logger, fallback)
         return FallbackVoiceover(fish, chain, logger, "fish-audio", fallback_label)
 
     if provider == "sarvam":
@@ -96,21 +115,18 @@ def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> Voiceov
         return sarvam
 
     if provider in ("elevenlabs", "auto"):
+        chain, fallback_label = _build_tts_fallback_chain(config, logger, fallback)
+
+        if not config.elevenlabs_api_key or not config.voice_id:
+            logger.warn(
+                "voiceover",
+                "ELEVENLABS_API_KEY or voice_id missing — skipping elevenlabs",
+            )
+            return chain
+
         elevenlabs = _maybe_cache(
             ElevenLabsVoiceover(config, logger), config, logger, "elevenlabs"
         )
-        if not config.elevenlabs_api_key or not config.voice_id:
-            if provider == "elevenlabs":
-                return elevenlabs
-            return fallback
-
-        chain: VoiceoverProvider = fallback
-        fallback_label = "edge-tts"
-        if config.sarvam_api_key and config.sarvam_fallback:
-            chain = FallbackVoiceover(
-                SarvamVoiceover(config, logger), fallback, logger, "sarvam", "edge-tts"
-            )
-            fallback_label = "sarvam"
         if config.elevenlabs_fallback:
             return FallbackVoiceover(
                 elevenlabs, chain, logger, "elevenlabs", fallback_label

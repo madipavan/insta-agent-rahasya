@@ -111,6 +111,9 @@ jobs:
           INSTALL_ML: "1"
         run: bash scripts/gha_setup.sh python
 
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
       - name: Write CI environment
         run: bash scripts/gha_setup.sh env
 

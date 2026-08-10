@@ -21,7 +21,8 @@ SAMPLE = (
 def main() -> None:
     config = load_config()
     logger = PipelineLogger(config.path("logs_dir"))
-    out = config.path("output_dir") / "fish_smoke_test.mp3"
+    provider_name = config.voice_provider.replace("-", "_")
+    out = config.path("output_dir") / f"{provider_name}_smoke_test.mp3"
     provider = get_voiceover_provider(config, logger)
     provider.generate(SAMPLE, out)
     print(f"OK: {out} ({out.stat().st_size} bytes)")

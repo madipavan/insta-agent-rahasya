@@ -69,10 +69,10 @@ jobs:
           if [ -z "$PEXELS_API_KEY" ] && [ -z "$PIXABAY_API_KEY" ]; then
             echo "::warning::PEXELS_API_KEY and PIXABAY_API_KEY missing — stock footage may fail"
           fi
-          if [ -z "$FISH_AUDIO_API_KEY" ] && [ -z "$SARVAM_API_KEY" ]; then
-            echo "::warning::FISH_AUDIO_API_KEY and SARVAM_API_KEY missing — voiceover will fall back to edge-tts"
-          elif [ -z "$FISH_AUDIO_API_KEY" ]; then
-            echo "::warning::FISH_AUDIO_API_KEY missing — primary fish-audio voice disabled"
+          if [ -z "$ELEVENLABS_API_KEY" ] && [ -z "$SARVAM_API_KEY" ] && [ -z "$FISH_AUDIO_API_KEY" ]; then
+            echo "::warning::No TTS API keys set — voiceover will fall back to edge-tts"
+          elif [ -z "$ELEVENLABS_API_KEY" ]; then
+            echo "::warning::ELEVENLABS_API_KEY missing — primary elevenlabs voice disabled"
           fi
 
       - name: Restore pipeline state

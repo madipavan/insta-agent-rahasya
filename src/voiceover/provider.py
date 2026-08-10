@@ -83,13 +83,24 @@ def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> Voiceov
             return FallbackVoiceover(sarvam, fallback, logger, "sarvam")
         return sarvam
 
-    elevenlabs = ElevenLabsVoiceover(config, logger)
-    if provider in ("elevenlabs", "auto") and config.elevenlabs_api_key and config.voice_id:
-        if config.elevenlabs_fallback:
-            return FallbackVoiceover(elevenlabs, fallback, logger, "elevenlabs")
-        return elevenlabs
+    if provider in ("elevenlabs", "auto"):
+        elevenlabs = ElevenLabsVoiceover(config, logger)
+        if not config.elevenlabs_api_key or not config.voice_id:
+            if provider == "elevenlabs":
+                return elevenlabs
+            return fallback
 
-    if provider == "elevenlabs":
+        chain: VoiceoverProvider = fallback
+        fallback_label = "edge-tts"
+        if config.sarvam_api_key and config.sarvam_fallback:
+            chain = FallbackVoiceover(
+                SarvamVoiceover(config, logger), fallback, logger, "sarvam", "edge-tts"
+            )
+            fallback_label = "sarvam"
+        if config.elevenlabs_fallback:
+            return FallbackVoiceover(
+                elevenlabs, chain, logger, "elevenlabs", fallback_label
+            )
         return elevenlabs
 
     return fallback

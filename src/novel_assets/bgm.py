@@ -354,8 +354,8 @@ def _download_from_youtube(url: str, output: Path, logger: PipelineLogger) -> bo
 
 def _generate_novel_pad(output: Path, novel: Novel) -> None:
     seed = int(hashlib.md5(novel.title.encode()).hexdigest()[:8], 16)
-    base_freq = 45 + (seed % 20)
-    freqs = (base_freq, int(base_freq * 1.5), int(base_freq * 2))
+    base_freq = 900 + (seed % 400)  # 900–1300 Hz anchor
+    freqs = (base_freq, min(base_freq + 800, 2200), min(base_freq + 1500, 3000))
     noise = "brown" if seed % 2 else "pink"
     _generate_ambient_track(output, freqs, noise)
 
@@ -366,17 +366,22 @@ def _generate_ambient_track(output: Path, freqs: tuple[int, ...], noise_color: s
 
     inputs = [
         "-f", "lavfi", "-i",
-        f"anoisesrc=color={noise_color}:duration={duration}:sample_rate=44100:amplitude=0.12",
+        f"anoisesrc=color={noise_color}:duration={duration}:sample_rate=44100:amplitude=0.1",
     ]
-    filters: list[str] = ["[0:a]lowpass=f=500[noise]"]
+    # Band-pass noise into mid-range so the pad survives voice+BGM mix on CI
+    filters: list[str] = ["[0:a]highpass=f=800,lowpass=f=2800,volume=0.06[noise]"]
     mix_inputs = ["[noise]"]
 
     for i, freq in enumerate(freqs):
         if freq <= 0:
             continue
         idx = i + 1
-        inputs.extend(["-f", "lavfi", "-i", f"sine=frequency={freq}:duration={duration}:sample_rate=44100"])
-        vol = 0.22 - i * 0.04
+        clamped = max(500, min(freq, 3000))
+        inputs.extend([
+            "-f", "lavfi", "-i",
+            f"sine=frequency={clamped}:duration={duration}:sample_rate=44100",
+        ])
+        vol = 0.45 - i * 0.06
         filters.append(f"[{idx}:a]volume={vol}[s{idx}]")
         mix_inputs.append(f"[s{idx}]")
 
@@ -384,6 +389,7 @@ def _generate_ambient_track(output: Path, freqs: tuple[int, ...], noise_color: s
     filter_complex = (
         ";".join(filters)
         + f";{''.join(mix_inputs)}amix=inputs={n}:duration=first,"
+        + "volume=1.8,alimiter=limit=0.95,"
         + f"afade=t=in:st=0:d=3,afade=t=out:st={duration - 5}:d=5"
     )
 

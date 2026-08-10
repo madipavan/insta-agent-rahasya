@@ -63,10 +63,12 @@ class MetaScheduler:
     GITHUB_REEL_PREFIX = "tmp-ci-reels"
     PUBLISH_RATE_LIMIT_CODES = {4, 17, 32, 613}
     PUBLISH_RATE_LIMIT_SUBCODES = {2207051, 2446079}
+    PUBLISH_AMBIGUOUS_SUBCODES = {2207085}  # publish may have succeeded despite HTTP error
     RATE_LIMIT_RETRY_ATTEMPTS = 6
     RATE_LIMIT_RETRY_BASE_SEC = 30
-    CAROUSEL_PUBLISH_DELAY_SEC = 90
+    CAROUSEL_PUBLISH_DELAY_SEC = 240
     CAROUSEL_CHILD_UPLOAD_DELAY_SEC = 2
+    PUBLISH_RECOVERY_WINDOW_MIN = 20
 
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
         self.config = config
@@ -892,18 +894,55 @@ class MetaScheduler:
             params=params,
             timeout=60,
         )
-        publish_id = self._media_publish_with_retry(resp, container_id)
+        publish_started = datetime.now(ZoneInfo("UTC"))
+        publish_id = self._media_publish_with_retry(
+            resp, container_id, publish_started=publish_started
+        )
         self.logger.info(f"Published container {container_id} → {publish_id}")
         return publish_id or None
 
     def _media_publish_with_retry(
-        self, resp: requests.Response, container_id: str,
+        self,
+        resp: requests.Response,
+        container_id: str,
+        *,
+        publish_started: datetime | None = None,
     ) -> str:
+        publish_started = publish_started or datetime.now(ZoneInfo("UTC"))
         for attempt in range(self.RATE_LIMIT_RETRY_ATTEMPTS):
             if resp.status_code < 400:
                 return resp.json().get("id", "")
 
+            if self._is_ambiguous_publish_error(resp):
+                recovered = self._recover_publish_id(
+                    container_id, since=publish_started
+                )
+                if recovered:
+                    self.logger.warn(
+                        "meta",
+                        f"media_publish ambiguous error for {container_id} — "
+                        f"recovered publish id {recovered}",
+                    )
+                    return recovered
+                self.logger.warn(
+                    "meta",
+                    f"media_publish ambiguous error for {container_id} — "
+                    "no matching recent media found",
+                )
+                self._log_api_error("media_publish", resp)
+                resp.raise_for_status()
+
             if self._is_rate_limited(resp) and attempt < self.RATE_LIMIT_RETRY_ATTEMPTS - 1:
+                recovered = self._recover_publish_id(
+                    container_id, since=publish_started
+                )
+                if recovered:
+                    self.logger.warn(
+                        "meta",
+                        f"media_publish rate limited but publish recovered: {recovered}",
+                    )
+                    return recovered
+
                 wait = self.RATE_LIMIT_RETRY_BASE_SEC * (2 ** attempt)
                 self.logger.warn(
                     "meta",
@@ -911,6 +950,11 @@ class MetaScheduler:
                     f"retry in {wait}s ({attempt + 1}/{self.RATE_LIMIT_RETRY_ATTEMPTS})",
                 )
                 time.sleep(wait)
+                recovered = self._recover_publish_id(
+                    container_id, since=publish_started
+                )
+                if recovered:
+                    return recovered
                 resp = requests.post(
                     f"{self.GRAPH_URL}/{self.ig_user_id}/media_publish",
                     params={
@@ -926,11 +970,31 @@ class MetaScheduler:
 
         raise RuntimeError(f"media_publish failed for {container_id} after rate-limit retries")
 
+    @staticmethod
+    def _parse_error_payload(resp: requests.Response) -> dict:
+        try:
+            err = resp.json().get("error", {})
+            return err if isinstance(err, dict) else {}
+        except (ValueError, AttributeError, TypeError):
+            return {}
+
+    def _is_ambiguous_publish_error(self, resp: requests.Response) -> bool:
+        err = self._parse_error_payload(resp)
+        subcode = err.get("error_subcode")
+        message = (err.get("message") or "").lower()
+        if subcode in self.PUBLISH_AMBIGUOUS_SUBCODES:
+            return True
+        if err.get("code") == -1 and "fatal" in message:
+            return True
+        return False
+
     def _is_rate_limited(self, resp: requests.Response) -> bool:
         if resp.status_code == 429:
             return True
+        if self._is_ambiguous_publish_error(resp):
+            return False
         try:
-            err = resp.json().get("error", {})
+            err = self._parse_error_payload(resp)
             code = err.get("code")
             subcode = err.get("error_subcode")
             message = (err.get("message") or "").lower()
@@ -944,9 +1008,92 @@ class MetaScheduler:
             pass
         return False
 
+    def _get_container_status(self, container_id: str) -> dict:
+        try:
+            resp = requests.get(
+                f"{self.GRAPH_URL}/{container_id}",
+                params={
+                    "access_token": self.access_token,
+                    "fields": "status_code,status",
+                },
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                return resp.json()
+        except requests.RequestException:
+            pass
+        return {}
+
+    def _fetch_recent_media(self, limit: int = 10) -> list[dict]:
+        try:
+            resp = requests.get(
+                f"{self.GRAPH_URL}/{self.ig_user_id}/media",
+                params={
+                    "access_token": self.access_token,
+                    "fields": "id,media_type,timestamp",
+                    "limit": str(limit),
+                },
+                timeout=30,
+            )
+            if resp.status_code == 200:
+                data = resp.json().get("data", [])
+                return data if isinstance(data, list) else []
+        except requests.RequestException:
+            pass
+        return []
+
+    @staticmethod
+    def _parse_media_timestamp(ts: str) -> datetime | None:
+        if not ts:
+            return None
+        try:
+            normalized = ts.replace("+0000", "+00:00").replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=ZoneInfo("UTC"))
+            return parsed
+        except (ValueError, TypeError):
+            return None
+
+    def _recover_publish_id(
+        self,
+        container_id: str,
+        *,
+        since: datetime | None = None,
+        media_type: str | None = None,
+    ) -> str | None:
+        status = self._get_container_status(container_id)
+        status_code = (status.get("status_code") or "").upper()
+        if status_code == "ERROR":
+            return None
+
+        since_utc = since or datetime.now(ZoneInfo("UTC"))
+        if since_utc.tzinfo is None:
+            since_utc = since_utc.replace(tzinfo=ZoneInfo("UTC"))
+        else:
+            since_utc = since_utc.astimezone(ZoneInfo("UTC"))
+        window_start = since_utc - timedelta(minutes=2)
+        window_end = since_utc + timedelta(minutes=self.PUBLISH_RECOVERY_WINDOW_MIN)
+
+        for item in self._fetch_recent_media(limit=15):
+            media_id = item.get("id")
+            if not media_id:
+                continue
+            if media_type and item.get("media_type") != media_type:
+                continue
+            posted = self._parse_media_timestamp(item.get("timestamp", ""))
+            if posted is None:
+                continue
+            posted_utc = posted.astimezone(ZoneInfo("UTC"))
+            if window_start <= posted_utc <= window_end:
+                return str(media_id)
+        return None
+
     @staticmethod
     def _classify_publish_error(exc: Exception) -> str:
         text = str(exc).lower()
+        if "2207085" in text or "ambiguous" in text:
+            return "ambiguous_publish"
         if "request limit" in text or "rate limit" in text or "403" in text:
             return "rate_limit"
         if isinstance(exc, TimeoutError):

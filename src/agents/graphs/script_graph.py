@@ -130,17 +130,28 @@ class ScriptGraphRunner:
                 f"Tell a complete mini-story for this episode. Cinematic dubbing tone. "
                 f"Use dramatic pauses (…). NO vague filler."
             )
+            shorten = False
+        elif "too long" in (err or ""):
+            extra = (
+                f"\n\nFIX REQUIRED: {err}. "
+                f"The script is TOO LONG. SHORTEN to at most {state['max_chars']} characters. "
+                f"Cut redundant lines and filler. Keep the hook, key plot beats, and cliffhanger. "
+                f"Do NOT add new scenes or expand."
+            )
+            shorten = True
         else:
             extra = (
                 f"\n\nFIX REQUIRED: {err}. "
                 f"Rewrite with voiceover_script between {state['min_chars']}-{state['max_chars']} chars. "
                 "NO recap. Named characters. Stronger hook. Sharper cliffhanger."
             )
+            shorten = False
         data = self.crew.refine_script(
             state["script_data"],
             extra,
             state["min_chars"],
             state["max_chars"],
+            shorten=shorten,
         )
         return {**state, "script_data": data, "attempt": state.get("attempt", 0) + 1}
 

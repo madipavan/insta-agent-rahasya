@@ -1,6 +1,8 @@
 """Tests for Meta publish rate-limit handling and partial success."""
 
+from datetime import datetime
 from unittest.mock import MagicMock, patch
+from zoneinfo import ZoneInfo
 
 import pytest
 import requests
@@ -58,6 +60,73 @@ def test_is_rate_limited_ignores_other_errors():
         }
     }
     assert meta._is_rate_limited(resp) is False
+
+
+def test_is_ambiguous_publish_error_detects_2207085():
+    meta = _scheduler()
+    resp = MagicMock(spec=requests.Response)
+    resp.status_code = 400
+    resp.json.return_value = {
+        "error": {
+            "message": "Fatal",
+            "code": -1,
+            "error_subcode": 2207085,
+        }
+    }
+    assert meta._is_ambiguous_publish_error(resp) is True
+    assert meta._is_rate_limited(resp) is False
+
+
+def test_classify_publish_error_ambiguous():
+    meta = _scheduler()
+    assert meta._classify_publish_error(
+        RuntimeError("media_publish failed [-1/2207085]: Fatal")
+    ) == "ambiguous_publish"
+
+
+@patch("src.scheduler.meta.MetaScheduler._recover_publish_id")
+def test_media_publish_with_retry_recovers_on_ambiguous_error(mock_recover):
+    meta = _scheduler()
+    mock_recover.return_value = "recovered_media_99"
+
+    ambiguous = MagicMock(spec=requests.Response)
+    ambiguous.status_code = 400
+    ambiguous.json.return_value = {
+        "error": {
+            "message": "Fatal",
+            "code": -1,
+            "error_subcode": 2207085,
+        }
+    }
+    ambiguous.raise_for_status.side_effect = requests.HTTPError("400")
+
+    publish_id = meta._media_publish_with_retry(ambiguous, "container_carousel")
+    assert publish_id == "recovered_media_99"
+    mock_recover.assert_called_once()
+
+
+@patch("src.scheduler.meta.MetaScheduler._fetch_recent_media")
+@patch("src.scheduler.meta.MetaScheduler._get_container_status")
+def test_recover_publish_id_matches_recent_media(mock_status, mock_media):
+    meta = _scheduler()
+    mock_status.return_value = {"status_code": "FINISHED"}
+    mock_media.return_value = [
+        {
+            "id": "media_old",
+            "media_type": "CAROUSEL_ALBUM",
+            "timestamp": "2020-01-01T12:00:00+0000",
+        },
+        {
+            "id": "media_new",
+            "media_type": "CAROUSEL_ALBUM",
+            "timestamp": "2026-08-08T19:40:00+0000",
+        },
+    ]
+    since = datetime(2026, 8, 8, 19, 35, tzinfo=ZoneInfo("UTC"))
+    recovered = meta._recover_publish_id(
+        "container_1", since=since, media_type="CAROUSEL_ALBUM"
+    )
+    assert recovered == "media_new"
 
 
 def test_classify_publish_error_rate_limit():

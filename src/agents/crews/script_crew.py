@@ -37,6 +37,12 @@ Enforce character limits exactly. Output valid JSON only. NO recap phrases.
 Do NOT add previous-episode explanations. Keep only THIS episode's new events.
 Scripts must sound like film dubbing — not a robot reading words."""
 
+REFINE_EDITOR_SYSTEM = """You are a Retention Editor for Hindi thriller reels.
+Follow the FIX REQUIRED instruction exactly:
+- If too short: expand with specific plot beats (never vague filler).
+- If too long: shorten — cut redundant lines, keep hook, key beats, cliffhanger.
+Never add recap. Output valid JSON only. Enforce character limits exactly."""
+
 MAX_LLM_ATTEMPTS = 3
 
 
@@ -69,22 +75,40 @@ class ScriptCrew:
         fix_instruction: str,
         min_chars: int,
         max_chars: int,
+        *,
+        shorten: bool = False,
     ) -> dict[str, Any]:
         """Edit an existing draft in-place (used by validation refine loop)."""
         self.logger.info("script_crew | editor refine")
         edit_brief = (
             f"{fix_instruction.strip()}\n\n"
-            f"{self._edit_brief(draft, min_chars, max_chars)}"
+            f"{self._edit_brief(draft, min_chars, max_chars, shorten=shorten)}"
         )
         return self._invoke_json(
             self.editor_llm,
-            EDITOR_SYSTEM,
+            REFINE_EDITOR_SYSTEM,
             edit_brief,
             "editor-refine",
             fallback=draft,
         )
 
-    def _edit_brief(self, draft: dict[str, Any], min_chars: int, max_chars: int) -> str:
+    def _edit_brief(
+        self,
+        draft: dict[str, Any],
+        min_chars: int,
+        max_chars: int,
+        *,
+        shorten: bool = False,
+    ) -> str:
+        if shorten:
+            return (
+                f"Edit this script JSON. HARD LIMIT: voiceover_script at most {max_chars} chars.\n"
+                f"The script is TOO LONG — CUT and tighten. Remove redundant sentences and filler.\n"
+                f"Keep the hook, essential plot beats, and cliffhanger. Do NOT add new scenes.\n"
+                f"episode_only_script = voiceover_script.\n"
+                f"NO recap. Named characters. Cinematic dubbing tone.\n\n"
+                f"{json.dumps(draft, ensure_ascii=False)}"
+            )
         return (
             f"Edit this script JSON. HARD LIMIT: voiceover_script {min_chars}-{max_chars} chars.\n"
             f"If under {min_chars} chars, EXPAND with more specific plot events and dialogue beats.\n"

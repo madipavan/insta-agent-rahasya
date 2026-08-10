@@ -12,6 +12,7 @@ import pytest
 from src.book_queue.models import Novel
 from src.book_queue.store import Database
 from src.config import AppConfig
+from src.novel_assets.bgm import _generate_novel_pad
 from src.novel_assets.manager import NovelAssetManager
 from src.pipeline.logger import PipelineLogger
 from src.scheduler.meta import MetaScheduler
@@ -93,6 +94,35 @@ def test_missing_bgm_file_skips_mix(asm: ReelAssembler, tmp_path: Path) -> None:
     delta = bgm_band_delta_db(boosted, padded, highpass_hz=2500, start_sec=1.5, duration_sec=1.0)
     assert delta is not None
     assert abs(delta) < 2.0
+
+
+def test_synthetic_pad_audible_in_mid_band(asm: ReelAssembler, tmp_path: Path) -> None:
+    """Synthetic CI fallback must be audible after mix (not sub-bass only)."""
+    novel = Novel(
+        id=1,
+        title="Audibility Test",
+        author="Tester",
+        country="IN",
+        chapter_count=8,
+        public_domain=True,
+        source_link="",
+        adaptation_checked=True,
+        estimated_episodes=4,
+        status="active",
+    )
+    voice = tmp_path / "voice.mp3"
+    bgm = tmp_path / "bgm.mp3"
+    padded = tmp_path / "padded.aac"
+    mixed = tmp_path / "mixed.aac"
+
+    _make_voice_mp3(voice, duration=8.0)
+    _generate_novel_pad(bgm, novel)
+    asm._pad_audio(voice, padded, delay_sec=1.0, pad_end_sec=1.0)
+    asm._mix_bgm(padded, bgm, mixed)
+
+    delta = bgm_band_delta_db(mixed, padded, highpass_hz=1000, start_sec=2.0, duration_sec=2.0)
+    assert delta is not None
+    assert delta >= 3.0, f"synthetic pad inaudible in mid band (delta={delta:.1f}dB)"
 
 
 def test_ensure_bgm_creates_file_when_fetch_fails(tmp_path: Path) -> None:

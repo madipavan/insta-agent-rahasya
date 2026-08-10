@@ -32,11 +32,11 @@ timezone: "Asia/Kolkata"
 
 # Voice: ElevenLabs (primary) → Sarvam → edge-tts fallback
 voice_provider: elevenlabs
-voice_name: Tarini
+voice_name: Vikram
 edge_tts_voice: "hi-IN-SwaraNeural"
 voice_language: hindi
 # ElevenLabs Creator — https://elevenlabs.io/app/developers/api-keys
-voice_id: "kZKm3BYbXfahOLAxYZG0"
+voice_id: "q6lbiuyq6L1H58xIpLAN"
 elevenlabs_model: eleven_multilingual_v2
 elevenlabs_stability: 0.35
 elevenlabs_similarity_boost: 0.75
@@ -44,6 +44,8 @@ elevenlabs_style: 0.55
 elevenlabs_sentence_mode: true
 elevenlabs_cliffhanger_whisper: true
 elevenlabs_fallback: true
+# Reuse cached voiceover on pipeline retry — saves ElevenLabs credits
+voiceover_cache: true
 # Sarvam AI — https://dashboard.sarvam.ai (₹100 free credits on signup)
 sarvam_model: bulbul:v3
 sarvam_speaker: priya
@@ -135,6 +137,7 @@ paths:
   logs_dir: logs
   stock_library: assets/stock_library
   sfx_library: assets/sfx_library
+  voiceover_cache_dir: output/voiceover_cache
   sample_scripts: data/sample_scripts
   novels_seed: data/novels_seed.json
   novels_pdf_dir: data/novels

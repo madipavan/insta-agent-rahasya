@@ -6,6 +6,7 @@ __pycache__/
 data/rahasya.db
 output/work/
 output/stock_cache/
+output/voiceover_cache/
 logs/*.log
 *.mp4
 *.mp3

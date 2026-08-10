@@ -14,6 +14,11 @@ from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.utils.ffmpeg_path import get_ffmpeg_exe
 from src.voiceover.base import VoiceoverBase
+from src.voiceover.cache import (
+    persist_sentence_cache,
+    restore_sentence_cache,
+    sentence_fingerprint,
+)
 
 _V3_CHUNK_SIZE = 4500
 _V2_CHUNK_SIZE = 1800
@@ -119,6 +124,18 @@ class ElevenLabsVoiceover(VoiceoverBase):
         return "v3" in model
 
     def _synthesize_chunk(self, text: str, output_path: Path, model: str) -> None:
+        provider = "elevenlabs"
+        if self.config.voiceover_cache:
+            fp = sentence_fingerprint(text, self.config, provider)
+            if restore_sentence_cache(
+                output_path=output_path,
+                fingerprint=fp,
+                config=self.config,
+                logger=self.logger,
+                provider=provider,
+            ):
+                return
+
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{self.config.voice_id}"
         headers = {
             "xi-api-key": self.config.elevenlabs_api_key,
@@ -171,6 +188,12 @@ class ElevenLabsVoiceover(VoiceoverBase):
                     response.raise_for_status()
 
                 output_path.write_bytes(response.content)
+                if self.config.voiceover_cache:
+                    persist_sentence_cache(
+                        output_path=output_path,
+                        fingerprint=sentence_fingerprint(text, self.config, provider),
+                        config=self.config,
+                    )
                 return
             except (requests.ConnectionError, requests.Timeout) as exc:
                 last_exc = exc

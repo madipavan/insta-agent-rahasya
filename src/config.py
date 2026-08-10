@@ -83,6 +83,7 @@ class PathsConfig:
     logs_dir: str = "logs"
     stock_library: str = "assets/stock_library"
     sfx_library: str = "assets/sfx_library"
+    voiceover_cache_dir: str = "output/voiceover_cache"
     sample_scripts: str = "data/sample_scripts"
     novels_seed: str = "data/novels_seed.json"
     novels_pdf_dir: str = "data/novels"
@@ -118,6 +119,7 @@ class AppConfig:
     elevenlabs_sentence_mode: bool = True
     elevenlabs_cliffhanger_whisper: bool = True
     elevenlabs_fallback: bool = True
+    voiceover_cache: bool = True
     fish_audio_model: str = "s2.1-pro-free"
     fish_audio_voice_id: str = ""
     fish_audio_speed: float = 0.80
@@ -221,6 +223,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         elevenlabs_sentence_mode=raw.get("elevenlabs_sentence_mode", True),
         elevenlabs_cliffhanger_whisper=raw.get("elevenlabs_cliffhanger_whisper", True),
         elevenlabs_fallback=raw.get("elevenlabs_fallback", True),
+        voiceover_cache=raw.get("voiceover_cache", True),
         fish_audio_model=raw.get("fish_audio_model", "s2.1-pro-free"),
         fish_audio_voice_id=raw.get("fish_audio_voice_id", ""),
         fish_audio_speed=float(raw.get("fish_audio_speed", 0.80)),

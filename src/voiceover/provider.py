@@ -9,6 +9,7 @@ import requests
 
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
+from src.voiceover.caching import CachingVoiceover
 from src.voiceover.edge_tts import EdgeTTSVoiceover
 from src.voiceover.elevenlabs import ElevenLabsVoiceover
 from src.voiceover.fish_audio import FishAudioVoiceover
@@ -57,6 +58,17 @@ class FallbackVoiceover:
         self.logger.warn("voiceover", f"Falling back to {self.fallback_name}.")
 
 
+def _maybe_cache(
+    provider: VoiceoverProvider,
+    config: AppConfig,
+    logger: PipelineLogger,
+    name: str,
+) -> VoiceoverProvider:
+    if not config.voiceover_cache:
+        return provider
+    return CachingVoiceover(provider, config, logger, name)
+
+
 def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> VoiceoverProvider:
     provider = config.voice_provider.lower()
     fallback = EdgeTTSVoiceover(config, logger)
@@ -65,7 +77,7 @@ def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> Voiceov
         return fallback
 
     if provider == "fish-audio":
-        fish = FishAudioVoiceover(config, logger)
+        fish = _maybe_cache(FishAudioVoiceover(config, logger), config, logger, "fish-audio")
         if not config.fish_audio_fallback:
             return fish
         chain: VoiceoverProvider = fallback
@@ -78,13 +90,15 @@ def get_voiceover_provider(config: AppConfig, logger: PipelineLogger) -> Voiceov
         return FallbackVoiceover(fish, chain, logger, "fish-audio", fallback_label)
 
     if provider == "sarvam":
-        sarvam = SarvamVoiceover(config, logger)
+        sarvam = _maybe_cache(SarvamVoiceover(config, logger), config, logger, "sarvam")
         if config.sarvam_fallback:
             return FallbackVoiceover(sarvam, fallback, logger, "sarvam")
         return sarvam
 
     if provider in ("elevenlabs", "auto"):
-        elevenlabs = ElevenLabsVoiceover(config, logger)
+        elevenlabs = _maybe_cache(
+            ElevenLabsVoiceover(config, logger), config, logger, "elevenlabs"
+        )
         if not config.elevenlabs_api_key or not config.voice_id:
             if provider == "elevenlabs":
                 return elevenlabs

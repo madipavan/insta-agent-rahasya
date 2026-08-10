@@ -774,6 +774,34 @@ class MetaScheduler:
                 f"rupload progress bytes_transferred={transferred}",
             )
 
+    def _probe_audio_codec(self, video_path: Path) -> str | None:
+        import subprocess
+
+        from src.utils.ffmpeg_path import get_ffmpeg_exe
+
+        probe = subprocess.run(
+            [
+                get_ffmpeg_exe(),
+                "-hide_banner",
+                "-print_format",
+                "json",
+                "-show_streams",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode != 0 or not probe.stdout:
+            return None
+        try:
+            info = json.loads(probe.stdout)
+        except json.JSONDecodeError:
+            return None
+        for stream in info.get("streams", []):
+            if stream.get("codec_type") == "audio":
+                return stream.get("codec_name")
+        return None
+
     def _prepare_reel_for_instagram(self, video_path: Path) -> Path:
         """Re-encode to H.264/AAC + faststart and enforce Instagram reel size/duration caps."""
         import subprocess
@@ -797,6 +825,15 @@ class MetaScheduler:
             "scale=1080:1920:force_original_aspect_ratio=decrease,"
             "pad=1080:1920:(ow-iw)/2:(oh-ih)/2"
         )
+        audio_codec = self._probe_audio_codec(video_path)
+        preserve_audio = audio_codec == "aac"
+        if preserve_audio:
+            self.logger.info("meta | preserving assembled AAC audio (keeps BGM bed intact)")
+        else:
+            self.logger.warn(
+                "meta",
+                f"re-encode audio from {audio_codec or 'unknown'} — BGM may need louder mix",
+            )
 
         for crf, maxrate, bufsize in encode_profiles:
             cmd = [
@@ -809,11 +846,18 @@ class MetaScheduler:
                 "-profile:v", "main", "-level", "4.0", "-pix_fmt", "yuv420p",
                 "-r", "30", "-vsync", "cfr", "-g", "60", "-keyint_min", "60",
                 "-maxrate", maxrate, "-bufsize", bufsize,
-                "-af", "loudnorm=I=-14:TP=-1.5:LRA=11",
-                "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
                 "-movflags", "+faststart",
                 str(out),
             ]
+            if preserve_audio:
+                audio_args = ["-c:a", "copy"]
+            else:
+                audio_args = [
+                    "-af", "alimiter=limit=0.95",
+                    "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2",
+                ]
+            insert_at = cmd.index("-movflags")
+            cmd[insert_at:insert_at] = audio_args
             result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode != 0:
                 raise RuntimeError(f"Instagram video prep failed: {result.stderr[-800:]}")

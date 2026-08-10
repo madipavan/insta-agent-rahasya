@@ -135,17 +135,26 @@ class ReelAssembler:
                 mixed = tmp_dir / "mixed_audio.aac"
                 vol = self.config.video.bgm_volume
                 voice_vol = self.config.video.voiceover_volume
-                self._mix_bgm(
-                    padded_audio,
-                    bgm_path,
-                    mixed,
-                    bgm_volume=vol,
-                    voice_volume=voice_vol,
-                )
+                for attempt in range(3):
+                    self._mix_bgm(
+                        padded_audio,
+                        bgm_path,
+                        mixed,
+                        bgm_volume=vol,
+                        voice_volume=voice_vol,
+                    )
+                    if not self._bgm_needs_boost(mixed, padded_audio, intro_dur):
+                        break
+                    if attempt < 2:
+                        vol = min(vol * 1.25, 0.9)
+                        self.logger.warn(
+                            "reel_assembly",
+                            f"BGM too quiet — retrying mix at {vol:.0%}",
+                        )
                 final_audio = mixed
                 self._verify_bgm_audible(mixed, padded_audio, intro_dur)
                 self.logger.info(
-                    f"reel_assembly | BGM at {vol:.0%}, voice at {voice_vol:.0%}"
+                    f"reel_assembly | BGM bed at {vol:.0%}, voice at {voice_vol:.0%}"
                 )
             elif bgm_path:
                 self.logger.warn("reel_assembly", f"BGM path missing on disk: {bgm_path}")
@@ -164,7 +173,7 @@ class ReelAssembler:
                 "-c:v", "libx264", "-preset", "fast", "-crf", "23",
                 "-pix_fmt", "yuv420p", "-profile:v", "main", "-level", "4.0",
                 "-movflags", "+faststart",
-                "-c:a", "aac", "-b:a", "128k", "-ar", "44100", "-ac", "2",
+                "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2",
                 "-map", "0:v:0", "-map", "1:a:0", "-shortest",
                 str(output_path),
             ])
@@ -292,10 +301,11 @@ class ReelAssembler:
         voiceover: Path,
         bgm: Path,
         output: Path,
-        bgm_volume: float = 0.35,
-        voice_volume: float = 1.4,
+        bgm_volume: float = 0.65,
+        voice_volume: float = 1.1,
+        bgm_weight: float = 1.0,
     ) -> None:
-        """Mix looping BGM under voice with light ducking so underscore stays audible."""
+        """Loop BGM under voice as a constant bed (no sidechain ducking)."""
         self._run_ffmpeg([
             "-y", "-i", str(voiceover), "-i", str(bgm),
             "-filter_complex",
@@ -303,15 +313,13 @@ class ReelAssembler:
                 f"[1:a]aloop=loop=-1:size=2e+09,aresample=44100,"
                 f"aformat=sample_fmts=fltp:channel_layouts=stereo,volume={bgm_volume}[bgm_raw];"
                 f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-                f"volume={voice_volume}[voice_pre];"
-                "[voice_pre]asplit=2[voice_mix][voice_sc];"
-                "[bgm_raw][voice_sc]sidechaincompress=threshold=0.08:ratio=2:attack=120:"
-                "release=600:makeup=1.5[bgm_ducked];"
-                "[voice_mix][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0:"
-                "normalize=0,alimiter=limit=0.98[aout]"
+                f"volume={voice_volume}[voice];"
+                f"[voice][bgm_raw]amix=inputs=2:duration=first:dropout_transition=2:"
+                f"weights=1 {bgm_weight}:normalize=0,alimiter=limit=0.98[aout]"
             ),
             "-map", "[aout]",
-            "-c:a", "aac", str(output),
+            "-c:a", "aac", "-b:a", "160k", "-ar", "44100", "-ac", "2",
+            str(output),
         ])
 
     def _measure_mean_volume(
@@ -334,6 +342,15 @@ class ReelAssembler:
                 return float(match.group(1))
         return None
 
+    def _bgm_needs_boost(
+        self, mixed_audio: Path, voice_only_audio: Path, intro_dur: float,
+    ) -> bool:
+        """Return True when the intro bed is too quiet to survive Instagram upload."""
+        del voice_only_audio
+        check_start = max(0.05, intro_dur * 0.15)
+        intro_db = self._measure_mean_volume(mixed_audio, start_sec=check_start, duration_sec=0.8)
+        return intro_db is not None and intro_db < -28.0
+
     def _verify_bgm_audible(
         self, mixed_audio: Path, voice_only_audio: Path, intro_dur: float,
     ) -> None:
@@ -343,7 +360,7 @@ class ReelAssembler:
         if intro_db is None:
             self.logger.warn("reel_assembly", "BGM intro check skipped (volumedetect failed)")
             return
-        if intro_db < -35.0:
+        if intro_db < -32.0:
             self.logger.warn(
                 "reel_assembly",
                 f"BGM intro check: mean={intro_db:.1f}dB — BGM may be inaudible on Instagram",
@@ -360,7 +377,7 @@ class ReelAssembler:
         )
         if mixed_voice_db is not None and voice_only_db is not None:
             delta = mixed_voice_db - voice_only_db
-            if delta < 1.5:
+            if delta < 2.0:
                 self.logger.warn(
                     "reel_assembly",
                     f"BGM under-voice check: delta={delta:+.1f}dB — underscore may be inaudible",

@@ -44,8 +44,38 @@ if gh run download "$RUN_ID" -n pipeline-state -D "$TMP" 2>/dev/null; then
   done
   if [ -d "$TMP/data/novels" ]; then
     mkdir -p data/novels
-    cp -a "$TMP/data/novels/." data/novels/
-    echo "[restore] restored data/novels/ (BGM cache)"
+    # Preserve committed/manual/youtube audio from checkout; only fill missing novels from artifact.
+    for novel_art in "$TMP/data/novels"/*; do
+      [ -d "$novel_art" ] || continue
+      name="$(basename "$novel_art")"
+      dest="data/novels/$name"
+      mkdir -p "$dest"
+      keep=0
+      if [ -f "$dest/bgm.json" ] && grep -Eq '"source": "(manual|youtube|elevenlabs_music|library)"' "$dest/bgm.json" 2>/dev/null; then
+        keep=1
+      fi
+      if [ -f "$dest/sfx/sfx.json" ] && grep -Eq '"source": "(manual|elevenlabs_sfx)"' "$dest/sfx/sfx.json" 2>/dev/null; then
+        keep=1
+      fi
+      if [ "$keep" = "1" ]; then
+        for f in "$novel_art"/*; do
+          [ -e "$f" ] || continue
+          base="$(basename "$f")"
+          case "$base" in
+            bgm.mp3|bgm.json|sfx) continue ;;
+          esac
+          if [ -d "$f" ]; then
+            cp -a "$f" "$dest/" 2>/dev/null || true
+          else
+            cp -f "$f" "$dest/" 2>/dev/null || true
+          fi
+        done
+        echo "[restore] kept local audio for $name"
+      else
+        cp -a "$novel_art/." "$dest/"
+      fi
+    done
+    echo "[restore] restored data/novels/ (BGM/SFX cache)"
   fi
   if [ -d "$TMP/output/review" ]; then
     cp -a "$TMP/output/review/." output/review/

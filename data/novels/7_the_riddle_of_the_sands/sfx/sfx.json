@@ -1,0 +1,11 @@
+{
+  "novel": "The Riddle of the Sands",
+  "source": "manual",
+  "files": [
+    "hook_impact.wav",
+    "whoosh_short.wav",
+    "cliffhanger_rumble.wav"
+  ],
+  "imported_from": "C:\\Users\\Genius Computer\\Downloads\\MUSCSynth-Tense_cinematic_ambi-Elevenlabs.wav",
+  "note": "Trimmed from ElevenLabs ambient WAV for hook/whoosh/cliffhanger"
+}

@@ -164,6 +164,7 @@ jobs:
             data/checkpoint.json
             data/novels/**/bgm.mp3
             data/novels/**/bgm.json
+            data/novels/**/sfx/**
             output/review/
           retention-days: 90
           if-no-files-found: ignore

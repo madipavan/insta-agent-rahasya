@@ -56,10 +56,21 @@ def build_sfx_placements(
 
 
 class SfxMixer:
-    def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        logger: PipelineLogger,
+        library_dir: Path | None = None,
+    ) -> None:
         self.config = config
         self.logger = logger
-        self.library_dir = config.path("sfx_library")
+        self.library_dir = library_dir or config.path("sfx_library")
+
+    def with_library(self, library_dir: Path | None) -> "SfxMixer":
+        """Return a mixer that reads SFX from a novel-specific folder when set."""
+        if library_dir is None:
+            return self
+        return SfxMixer(self.config, self.logger, library_dir=library_dir)
 
     def ensure_library(self) -> None:
         """Create built-in SFX files if the library folder is empty."""

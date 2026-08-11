@@ -138,6 +138,7 @@ class Pipeline:
                 stock_paths,
                 work_dir / "reel.mp4",
                 bgm_path=assets.bgm_path,
+                sfx_dir=assets.sfx_dir,
             )
             static_paths = self.static_post.generate_all(
                 context, script, work_dir, stock_paths

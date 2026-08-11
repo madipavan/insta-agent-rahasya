@@ -1,4 +1,4 @@
-"""Assign and cache per-novel BGM and thumbnail base art."""
+"""Assign and cache per-novel BGM, SFX, and thumbnail base art."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+
+import requests
 
 from src.book_queue.models import Novel
 from src.book_queue.store import Database
@@ -18,6 +20,11 @@ from src.novel_assets.bgm import (
     fetch_novel_bgm,
     is_synthetic_bgm,
 )
+from src.novel_assets.elevenlabs_audio import (
+    generate_novel_music,
+    generate_novel_sfx,
+    novel_sfx_complete,
+)
 from src.pipeline.logger import PipelineLogger
 from src.visuals.stock import StockResolver
 
@@ -27,6 +34,7 @@ class NovelAssets:
     novel_dir: Path
     bgm_path: Path | None
     thumbnail_base: Path
+    sfx_dir: Path | None = None
 
 
 class NovelAssetManager:
@@ -53,10 +61,16 @@ class NovelAssetManager:
         kw = keywords or []
 
         bgm_path = self._ensure_bgm(novel, novel_dir, kw)
+        sfx_dir = self._ensure_sfx(novel, novel_dir, kw)
         thumbnail_base = self._ensure_thumbnail_base(novel, novel_dir, kw)
 
         self.db.set_novel_assets(novel.id, str(bgm_path) if bgm_path else "", str(thumbnail_base))
-        return NovelAssets(novel_dir=novel_dir, bgm_path=bgm_path, thumbnail_base=thumbnail_base)
+        return NovelAssets(
+            novel_dir=novel_dir,
+            bgm_path=bgm_path,
+            thumbnail_base=thumbnail_base,
+            sfx_dir=sfx_dir,
+        )
 
     def episode_thumbnail(
         self,
@@ -85,6 +99,9 @@ class NovelAssetManager:
         slug = self._slugify(novel.title)
         return self.novels_root / f"{novel.id}_{slug}"
 
+    def _elevenlabs_audio_enabled(self) -> bool:
+        return bool(self.config.video.elevenlabs_audio_enabled and self.config.elevenlabs_api_key)
+
     def _ensure_bgm(self, novel: Novel, novel_dir: Path, keywords: list[str]) -> Path | None:
         cached = novel_dir / "bgm.mp3"
         meta = novel_dir / "bgm.json"
@@ -96,9 +113,7 @@ class NovelAssetManager:
                 self.logger.info(
                     f"Retrying BGM fetch (cached synthetic pad) for '{novel.title}'"
                 )
-                refreshed = fetch_novel_bgm(
-                    novel, keywords, cached, self.logger, library_dir=self.bgm_library
-                )
+                refreshed = self._fetch_bgm_with_elevenlabs(novel, keywords, cached)
                 if refreshed and refreshed.exists() and not is_synthetic_bgm(refreshed):
                     self.logger.info(f"Replaced synthetic BGM for '{novel.title}'")
                     return refreshed
@@ -107,9 +122,7 @@ class NovelAssetManager:
             if cached.stat().st_size > 900_000:
                 return cached
 
-        result = fetch_novel_bgm(
-            novel, keywords, cached, self.logger, library_dir=self.bgm_library
-        )
+        result = self._fetch_bgm_with_elevenlabs(novel, keywords, cached)
         if result and result.exists():
             self.logger.info(f"Assigned BGM for '{novel.title}'")
             return result
@@ -126,6 +139,48 @@ class NovelAssetManager:
         except (OSError, subprocess.CalledProcessError) as exc:
             self.logger.warn("novel_assets", f"BGM unavailable for '{novel.title}': {exc}")
             return None
+
+    def _fetch_bgm_with_elevenlabs(
+        self, novel: Novel, keywords: list[str], cached: Path
+    ) -> Path | None:
+        """Prefer ElevenLabs music (once), then YouTube/library/synthetic."""
+        if self._elevenlabs_audio_enabled():
+            try:
+                result = generate_novel_music(
+                    novel, keywords, cached, self.config, self.logger
+                )
+                if result and result.exists():
+                    return result
+            except (OSError, RuntimeError, requests.RequestException) as exc:
+                self.logger.warn("novel_assets", f"ElevenLabs music failed: {exc}")
+
+        return fetch_novel_bgm(
+            novel, keywords, cached, self.logger, library_dir=self.bgm_library
+        )
+
+    def _ensure_sfx(
+        self, novel: Novel, novel_dir: Path, keywords: list[str]
+    ) -> Path | None:
+        sfx_dir = novel_dir / "sfx"
+        if novel_sfx_complete(sfx_dir):
+            self.logger.info(f"Using cached novel SFX for '{novel.title}'")
+            return sfx_dir
+
+        if not self._elevenlabs_audio_enabled():
+            return None
+
+        try:
+            result = generate_novel_sfx(novel, keywords, sfx_dir, self.config, self.logger)
+            if result and novel_sfx_complete(result):
+                self.logger.info(f"Assigned ElevenLabs SFX for '{novel.title}'")
+                return result
+        except (OSError, RuntimeError, requests.RequestException) as exc:
+            self.logger.warn("novel_assets", f"ElevenLabs SFX failed: {exc}")
+
+        # Incomplete set — remove so next run can retry cleanly
+        if sfx_dir.exists() and not novel_sfx_complete(sfx_dir):
+            shutil.rmtree(sfx_dir, ignore_errors=True)
+        return None
 
     def _ensure_thumbnail_base(
         self, novel: Novel, novel_dir: Path, keywords: list[str]

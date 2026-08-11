@@ -34,6 +34,7 @@ class ReelAssembler:
         stock_paths: list[Path] | Path,
         output_path: Path,
         bgm_path: Path | None = None,
+        sfx_dir: Path | None = None,
     ) -> Path:
         if isinstance(stock_paths, Path):
             stock_paths = [stock_paths]
@@ -44,6 +45,7 @@ class ReelAssembler:
         width = self.config.video.width
         height = self.config.video.height
         fps = self.config.video.fps
+        sfx_mixer = self.sfx.with_library(sfx_dir)
 
         with tempfile.TemporaryDirectory() as tmp:
             tmp_dir = Path(tmp)
@@ -125,8 +127,10 @@ class ReelAssembler:
                     whoosh_volume=self.config.video.sfx_whoosh_volume,
                     cliffhanger_volume=self.config.video.sfx_cliffhanger_volume,
                 )
-                self.sfx.apply(audio_path, sfx_audio, placements)
+                sfx_mixer.apply(audio_path, sfx_audio, placements)
                 vo_for_mix = sfx_audio
+                if sfx_dir:
+                    self.logger.info(f"reel_assembly | using novel SFX from {sfx_dir}")
 
             self._pad_audio(vo_for_mix, padded_audio, intro_dur, outro_dur)
 
@@ -146,7 +150,7 @@ class ReelAssembler:
                     if not self._bgm_needs_boost(mixed, padded_audio, intro_dur):
                         break
                     if attempt < 2:
-                        vol = min(vol * 1.25, 0.9)
+                        vol = min(vol * 1.25, 0.45)
                         self.logger.warn(
                             "reel_assembly",
                             f"BGM too quiet — retrying mix at {vol:.0%}",
@@ -301,11 +305,11 @@ class ReelAssembler:
         voiceover: Path,
         bgm: Path,
         output: Path,
-        bgm_volume: float = 0.65,
-        voice_volume: float = 1.1,
+        bgm_volume: float = 0.30,
+        voice_volume: float = 1.2,
         bgm_weight: float = 1.0,
     ) -> None:
-        """Loop BGM under voice as a constant bed (stream_loop — reliable on CI ffmpeg)."""
+        """Loop BGM under voice with light sidechain ducking (stream_loop for CI)."""
         self._run_ffmpeg([
             "-y", "-i", str(voiceover), "-stream_loop", "-1", "-i", str(bgm),
             "-filter_complex",
@@ -313,8 +317,11 @@ class ReelAssembler:
                 f"[1:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
                 f"volume={bgm_volume}[bgm_raw];"
                 f"[0:a]aresample=44100,aformat=sample_fmts=fltp:channel_layouts=stereo,"
-                f"volume={voice_volume}[voice];"
-                f"[voice][bgm_raw]amix=inputs=2:duration=first:dropout_transition=2:"
+                f"volume={voice_volume}[voice_pre];"
+                "[voice_pre]asplit=2[voice_mix][voice_sc];"
+                "[bgm_raw][voice_sc]sidechaincompress=threshold=0.06:ratio=2.5:attack=100:"
+                "release=500:makeup=1.2[bgm_ducked];"
+                f"[voice_mix][bgm_ducked]amix=inputs=2:duration=first:dropout_transition=0:"
                 f"weights=1 {bgm_weight}:normalize=0,alimiter=limit=0.98[aout]"
             ),
             "-map", "[aout]",

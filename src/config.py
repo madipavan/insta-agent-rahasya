@@ -64,8 +64,8 @@ class VideoConfig:
     stock_providers: list[str] = field(
         default_factory=lambda: ["local", "pixabay", "pexels"]
     )
-    bgm_volume: float = 0.65
-    voiceover_volume: float = 1.1
+    bgm_volume: float = 0.30
+    voiceover_volume: float = 1.2
     instagram_max_sec: int = 90
     instagram_max_upload_mb: int = 12
     sfx_enabled: bool = True
@@ -73,6 +73,8 @@ class VideoConfig:
     sfx_whoosh_volume: float = 0.22
     sfx_cliffhanger_volume: float = 0.30
     sfx_cliffhanger_before_end_sec: float = 8.0
+    # Per-novel ElevenLabs music + SFX (generate once, reuse all episodes)
+    elevenlabs_audio_enabled: bool = True
 
 
 @dataclass
@@ -119,6 +121,8 @@ class AppConfig:
     elevenlabs_sentence_mode: bool = True
     elevenlabs_cliffhanger_whisper: bool = True
     elevenlabs_fallback: bool = True
+    elevenlabs_music_length_ms: int = 30000
+    elevenlabs_music_model: str = "music_v1"
     voiceover_cache: bool = True
     fish_audio_model: str = "s2.1-pro-free"
     fish_audio_voice_id: str = ""
@@ -223,6 +227,8 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         elevenlabs_sentence_mode=raw.get("elevenlabs_sentence_mode", True),
         elevenlabs_cliffhanger_whisper=raw.get("elevenlabs_cliffhanger_whisper", True),
         elevenlabs_fallback=raw.get("elevenlabs_fallback", True),
+        elevenlabs_music_length_ms=int(raw.get("elevenlabs_music_length_ms", 30000)),
+        elevenlabs_music_model=raw.get("elevenlabs_music_model", "music_v1"),
         voiceover_cache=raw.get("voiceover_cache", True),
         fish_audio_model=raw.get("fish_audio_model", "s2.1-pro-free"),
         fish_audio_voice_id=raw.get("fish_audio_voice_id", ""),

@@ -143,9 +143,14 @@ def is_synthetic_bgm(bgm_path: Path) -> bool:
         return False
 
 
+_LIBRARY_GLOBS = ("*.mp3", "*.wav", "*.m4a", "*.aac")
+
+
 def _copy_library_track(novel: Novel, library_dir: Path, output: Path, logger: PipelineLogger) -> bool:
     tracks = sorted(
-        p for p in library_dir.glob("*.mp3")
+        p
+        for pattern in _LIBRARY_GLOBS
+        for p in library_dir.glob(pattern)
         if p.stat().st_size > _SYNTHETIC_MAX_BYTES
         and not any(bad in p.stem.lower() for bad in _AVOID_MARKERS)
     )
@@ -153,9 +158,24 @@ def _copy_library_track(novel: Novel, library_dir: Path, output: Path, logger: P
         return False
     pick = tracks[novel.id % len(tracks)]
     output.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(pick, output)
+    if pick.suffix.lower() == ".mp3":
+        shutil.copy2(pick, output)
+    else:
+        _convert_library_audio(pick, output)
     logger.info(f"Using library BGM: {pick.name}")
     return True
+
+
+def _convert_library_audio(source: Path, output: Path) -> None:
+    ffmpeg = get_ffmpeg_exe()
+    subprocess.run(
+        [
+            ffmpeg, "-y", "-i", str(source),
+            "-c:a", "libmp3lame", "-b:a", "320k", str(output),
+        ],
+        check=True,
+        capture_output=True,
+    )
 
 
 def _english_keywords(keywords: list[str]) -> list[str]:
@@ -369,7 +389,7 @@ def _generate_ambient_track(output: Path, freqs: tuple[int, ...], noise_color: s
         f"anoisesrc=color={noise_color}:duration={duration}:sample_rate=44100:amplitude=0.1",
     ]
     # Band-pass noise into mid-range so the pad survives voice+BGM mix on CI
-    filters: list[str] = ["[0:a]highpass=f=800,lowpass=f=2800,volume=0.06[noise]"]
+    filters: list[str] = ["[0:a]highpass=f=800,lowpass=f=2800,volume=0.04[noise]"]
     mix_inputs = ["[noise]"]
 
     for i, freq in enumerate(freqs):
@@ -381,7 +401,7 @@ def _generate_ambient_track(output: Path, freqs: tuple[int, ...], noise_color: s
             "-f", "lavfi", "-i",
             f"sine=frequency={clamped}:duration={duration}:sample_rate=44100",
         ])
-        vol = 0.45 - i * 0.06
+        vol = 0.24 - i * 0.04
         filters.append(f"[{idx}:a]volume={vol}[s{idx}]")
         mix_inputs.append(f"[s{idx}]")
 
@@ -389,7 +409,7 @@ def _generate_ambient_track(output: Path, freqs: tuple[int, ...], noise_color: s
     filter_complex = (
         ";".join(filters)
         + f";{''.join(mix_inputs)}amix=inputs={n}:duration=first,"
-        + "volume=1.8,alimiter=limit=0.95,"
+        + "volume=1.0,alimiter=limit=0.90,"
         + f"afade=t=in:st=0:d=3,afade=t=out:st={duration - 5}:d=5"
     )
 

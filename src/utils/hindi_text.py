@@ -4,15 +4,22 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Literal
 
 from src.config import AppConfig, ROOT_DIR
 
 _DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
 
+ScriptKind = Literal["deva", "latin"]
+
 # Symbols LLMs often emit that Devanagari TTFs do not include → tofu squares.
+# Even after ASCII substitution, Latin/punctuation still need a Latin-capable font
+# (Noto/Anek Devanagari ship .notdef for A–Z, digits, ., ?, …).
 _CHAR_REPLACEMENTS = str.maketrans(
     {
         "\u2026": "...",  # …
+        "\u2022": "-",  # •
+        "\u00b7": "-",  # ·
         "\u2014": "-",  # —
         "\u2013": "-",  # –
         "\u2018": "'",  # '
@@ -22,6 +29,9 @@ _CHAR_REPLACEMENTS = str.maketrans(
         "\u00a0": " ",
         "\u2044": "/",
         "\u2212": "-",
+        "\uff0e": ".",  # fullwidth full stop
+        "\uff1f": "?",  # fullwidth question
+        "\uff01": "!",  # fullwidth exclamation
     }
 )
 
@@ -64,6 +74,56 @@ def sanitize_hindi_text(text: str) -> str:
     return re.sub(r"\s+", " ", "".join(cleaned)).strip()
 
 
+def _char_script_kind(ch: str) -> ScriptKind:
+    if _DEVANAGARI_RE.match(ch) or ch in "।॥":
+        return "deva"
+    return "latin"
+
+
+def iter_script_runs(text: str) -> list[tuple[ScriptKind, str]]:
+    """Split Hinglish into Devanagari vs Latin/ASCII runs for dual-font drawing.
+
+    Spaces stay attached to the preceding run (leading spaces join the first
+    non-space run). Latin covers A–Z names, digits, and punctuation Devanagari
+    TTFs typically lack (. ? ! … after normalize, etc.).
+    """
+    if not text:
+        return []
+    runs: list[tuple[ScriptKind, str]] = []
+    buf: list[str] = []
+    kind: ScriptKind | None = None
+
+    def flush() -> None:
+        nonlocal buf, kind
+        if buf and kind is not None:
+            runs.append((kind, "".join(buf)))
+        buf = []
+        kind = None
+
+    for ch in text:
+        if ch.isspace():
+            buf.append(ch)
+            continue
+        this = _char_script_kind(ch)
+        if kind is None:
+            kind = this
+            buf.append(ch)
+        elif this == kind:
+            buf.append(ch)
+        else:
+            flush()
+            kind = this
+            buf.append(ch)
+    flush()
+    if not runs and buf:
+        return [("latin", "".join(buf))]
+    return runs
+
+
+def contains_devanagari(text: str) -> bool:
+    return bool(_DEVANAGARI_RE.search(text or ""))
+
+
 def hindi_font_paths(config: AppConfig, *, bold: bool = True) -> list[Path]:
     """Ordered Hindi font file candidates (bundled → OS)."""
     regular_name = "NotoSansDevanagari-Regular.ttf"
@@ -89,8 +149,32 @@ def hindi_font_paths(config: AppConfig, *, bold: bool = True) -> list[Path]:
     ]
 
 
+def latin_font_paths(config: AppConfig) -> list[Path]:
+    """Latin-capable fonts for ASCII/names embedded in Hinglish lines."""
+    return [
+        config.resolve_asset(config.brand.body_font),
+        ROOT_DIR / "assets/fonts/Inter-Regular.ttf",
+        Path("C:/Windows/Fonts/arial.ttf"),
+        Path("C:/Windows/Fonts/segoeui.ttf"),
+        config.resolve_asset(config.brand.quote_font),
+        Path(config.brand.quote_font),
+        ROOT_DIR / "assets/fonts/BebasNeue-Regular.ttf",
+        Path("C:/Windows/Fonts/georgiab.ttf"),
+        Path("C:/Windows/Fonts/timesbd.ttf"),
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+        Path("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"),
+    ]
+
+
 def resolve_hindi_font_path(config: AppConfig, *, bold: bool = True) -> Path | None:
     for path in hindi_font_paths(config, bold=bold):
+        if path.exists():
+            return path
+    return None
+
+
+def resolve_latin_font_path(config: AppConfig) -> Path | None:
+    for path in latin_font_paths(config):
         if path.exists():
             return path
     return None

@@ -27,6 +27,9 @@ On Windows (PowerShell):
 curl.exe -fsSL -o assets/fonts/AnekDevanagari-ExtraBold.ttf "https://github.com/googlefonts/anek-devanagari/raw/main/fonts/ttf/AnekDevanagari-ExtraBold.ttf"
 ```
 
-**Square boxes in Hindi text?** Scripts use `…` and emoji that Devanagari fonts lack — the pipeline now normalizes these to `...` before rendering.
+**Square boxes (tofu) in Hindi/Hinglish?** Devanagari TTFs (Noto/Anek) lack Latin
+letters and most ASCII punctuation. The pipeline normalizes `…`/emoji, then draws
+Devanagari runs with the Hindi font and Latin/ASCII runs with a body/Latin fallback
+(see `src/utils/hindi_text.py` + `src/utils/mixed_font.py`).
 
 Configure paths in `config.yaml` under `brand:`.

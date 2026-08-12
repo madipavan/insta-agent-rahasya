@@ -6,7 +6,13 @@ import textwrap
 from pathlib import Path
 
 from src.config import AppConfig, ROOT_DIR
-from src.utils.hindi_text import hindi_font_paths, normalize_hindi_for_render
+from src.utils.hindi_text import (
+    contains_devanagari,
+    hindi_font_paths,
+    iter_script_runs,
+    latin_font_paths,
+    normalize_hindi_for_render,
+)
 from src.visuals.captions import CaptionSegment
 
 _ASS_FAMILY_NAMES = {
@@ -15,7 +21,14 @@ _ASS_FAMILY_NAMES = {
     "TiroDevanagariHindi-Regular.ttf": "Tiro Devanagari Hindi",
     "NotoSansDevanagari-Bold.ttf": "Noto Sans Devanagari",
     "NotoSansDevanagari-Regular.ttf": "Noto Sans Devanagari",
+    "NotoSerifDevanagari-Regular.ttf": "Noto Serif Devanagari",
     "Inter-Regular.ttf": "Inter",
+    "BebasNeue-Regular.ttf": "Bebas Neue",
+    "arial.ttf": "Arial",
+    "segoeui.ttf": "Segoe UI",
+    "georgiab.ttf": "Georgia",
+    "DejaVuSans.ttf": "DejaVu Sans",
+    "LiberationSans-Regular.ttf": "Liberation Sans",
 }
 
 
@@ -35,10 +48,10 @@ def _resolve_caption_font(config: AppConfig) -> tuple[Path, str]:
 
 
 def _resolve_english_font(config: AppConfig) -> str:
-    body = config.resolve_asset(config.brand.body_font)
-    if body.exists():
-        return _font_family_from_path(body)
-    return "Inter"
+    for path in latin_font_paths(config):
+        if path.exists():
+            return _font_family_from_path(path)
+    return "Arial"
 
 
 def _format_ass_time(seconds: float) -> str:
@@ -53,9 +66,26 @@ def _escape_ass(text: str) -> str:
     return text.replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
 
 
-def _wrap_line(text: str, width: int) -> str:
+def _ass_mixed_line(text: str, *, hindi_font: str, latin_font: str) -> str:
+    """Escape one visual line; switch to Latin font for ASCII/name runs."""
+    if not contains_devanagari(text):
+        return _escape_ass(text)
+    parts: list[str] = []
+    for kind, run in iter_script_runs(text):
+        esc = _escape_ass(run)
+        if kind == "latin":
+            parts.append(f"{{\\fn{latin_font}}}{esc}{{\\fn{hindi_font}}}")
+        else:
+            parts.append(esc)
+    return "".join(parts)
+
+
+def _wrap_line(text: str, width: int, *, hindi_font: str, latin_font: str) -> str:
     lines = textwrap.wrap(text, width=width) or [text]
-    return "\\N".join(_escape_ass(line) for line in lines)
+    return "\\N".join(
+        _ass_mixed_line(line, hindi_font=hindi_font, latin_font=latin_font)
+        for line in lines
+    )
 
 
 def _format_bilingual_event(
@@ -63,6 +93,7 @@ def _format_bilingual_event(
     *,
     hindi_size: int,
     english_size: int,
+    hindi_font: str,
     english_font: str,
     wrap_hi: int = 26,
     wrap_en: int = 34,
@@ -72,11 +103,13 @@ def _format_bilingual_event(
     if not parts:
         return ""
     if len(parts) == 1:
-        return _wrap_line(parts[0], wrap_hi)
+        return _wrap_line(
+            parts[0], wrap_hi, hindi_font=hindi_font, latin_font=english_font
+        )
 
-    hi = _wrap_line(parts[0], wrap_hi)
+    hi = _wrap_line(parts[0], wrap_hi, hindi_font=hindi_font, latin_font=english_font)
     en_raw = " ".join(parts[1:])
-    en = _wrap_line(en_raw, wrap_en)
+    en = _wrap_line(en_raw, wrap_en, hindi_font=english_font, latin_font=english_font)
     # Inline override: smaller English under Hindi
     return (
         f"{{\\fs{hindi_size}}}{hi}"
@@ -131,6 +164,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             raw,
             hindi_size=hi_size,
             english_size=en_size,
+            hindi_font=font_name,
             english_font=english_font,
         )
         events.append(f"Dialogue: 0,{start},{end},{style},,0,0,0,,{text}")

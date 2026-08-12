@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
-import re
 import textwrap
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
 from src.config import AppConfig
-from src.utils.hindi_text import hindi_font_paths, normalize_hindi_for_render
+from src.utils.hindi_text import (
+    contains_devanagari,
+    hindi_font_paths,
+    latin_font_paths,
+    normalize_hindi_for_render,
+)
+from src.utils import mixed_font
 
-_DEVANAGARI_RE = re.compile(r"[\u0900-\u097F]")
+# Vertical gap between Hindi block and English block on bilingual slides.
+_BILINGUAL_BLOCK_GAP = 28
+_HI_LINE_SPACING = 14
+_EN_LINE_SPACING = 8
 
 
 class BrandTemplates:
@@ -23,7 +31,7 @@ class BrandTemplates:
         return tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
 
     def _is_hindi(self, text: str) -> bool:
-        return bool(_DEVANAGARI_RE.search(text))
+        return contains_devanagari(text)
 
     def _get_hindi_font(self, size: int, bold: bool = True) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         for path in hindi_font_paths(self.config, bold=bold):
@@ -32,6 +40,13 @@ class BrandTemplates:
         raise FileNotFoundError(
             "No Hindi font found. Run: bash scripts/download_fonts.sh"
         )
+
+    def _get_latin_font(self, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
+        """Latin-capable face for ASCII/names inside Hinglish (Devanagari TTFs tofu)."""
+        for path in latin_font_paths(self.config):
+            if path.exists():
+                return ImageFont.truetype(str(path), size)
+        return ImageFont.load_default()
 
     def _get_font(self, font_path: str, size: int) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
         candidates = [
@@ -59,6 +74,13 @@ class BrandTemplates:
             use_bold = self.config.static_post.hindi_bold if bold is None else bold
             return self._get_hindi_font(size, bold=use_bold)
         return self._get_font(self.config.brand.quote_font, size)
+
+    def _latin_companion(
+        self, text: str, size: int
+    ) -> ImageFont.FreeTypeFont | ImageFont.ImageFont | None:
+        if self._is_hindi(text):
+            return self._get_latin_font(size)
+        return None
 
     def create_card(
         self,
@@ -125,10 +147,10 @@ class BrandTemplates:
         sp = self.config.static_post
 
         if quote_en:
-            hi_font, hi_wrapped, en_font, en_wrapped, text_y = self._fit_bilingual_quote(
-                draw, quote_hi, quote_en, width, height
+            hi_font, hi_latin, hi_wrapped, en_font, en_wrapped, text_y = (
+                self._fit_bilingual_quote(draw, quote_hi, quote_en, width, height)
             )
-            self._draw_centered_text(
+            hi_bottom = self._draw_centered_text(
                 draw,
                 hi_wrapped,
                 width,
@@ -136,11 +158,10 @@ class BrandTemplates:
                 hi_font,
                 (245, 245, 245),
                 stroke_width=sp.text_stroke_width,
+                latin_font=hi_latin,
+                spacing=_HI_LINE_SPACING,
             )
-            hi_bbox = draw.multiline_textbbox(
-                (0, 0), hi_wrapped, font=hi_font, align="center", spacing=10
-            )
-            en_y = text_y + (hi_bbox[3] - hi_bbox[1]) + 28
+            en_y = hi_bottom + _BILINGUAL_BLOCK_GAP
             self._draw_centered_text(
                 draw,
                 en_wrapped,
@@ -149,9 +170,12 @@ class BrandTemplates:
                 en_font,
                 (210, 210, 210),
                 stroke_width=max(0, sp.text_stroke_width - 1),
+                spacing=_EN_LINE_SPACING,
             )
         else:
-            font, wrapped, text_y = self._fit_quote_text(draw, quote_hi, width, height)
+            font, latin, wrapped, text_y = self._fit_quote_text(
+                draw, quote_hi, width, height
+            )
             self._draw_centered_text(
                 draw,
                 wrapped,
@@ -160,6 +184,7 @@ class BrandTemplates:
                 font,
                 (245, 245, 245),
                 stroke_width=sp.text_stroke_width,
+                latin_font=latin,
             )
 
         watermark_font = self._get_font(self.config.brand.body_font, 28)
@@ -199,30 +224,56 @@ class BrandTemplates:
         for hi_size in range(hi_max, hi_min - 1, -2):
             en_size = max(en_min, min(en_max, hi_size - 6))
             hi_font = self._quote_font_for(hindi, hi_size)
+            hi_latin = self._latin_companion(hindi, hi_size)
             en_font = self._get_font(self.config.brand.body_font, en_size)
             for hi_wrap, en_wrap in ((16, 28), (14, 26), (12, 24), (10, 22)):
                 hi_wrapped = textwrap.fill(hindi, width=hi_wrap)
                 en_wrapped = textwrap.fill(english, width=en_wrap)
-                hi_bbox = draw.multiline_textbbox(
-                    (0, 0), hi_wrapped, font=hi_font, align="center", spacing=10
+                hi_bbox = mixed_font.multiline_bbox(
+                    draw, hi_wrapped, hi_font, hi_latin, spacing=_HI_LINE_SPACING
                 )
-                en_bbox = draw.multiline_textbbox(
-                    (0, 0), en_wrapped, font=en_font, align="center", spacing=8
+                en_bbox = mixed_font.multiline_bbox(
+                    draw, en_wrapped, en_font, None, spacing=_EN_LINE_SPACING
                 )
-                total_h = (hi_bbox[3] - hi_bbox[1]) + 28 + (en_bbox[3] - en_bbox[1])
+                total_h = (
+                    (hi_bbox[3] - hi_bbox[1])
+                    + _BILINGUAL_BLOCK_GAP
+                    + (en_bbox[3] - en_bbox[1])
+                )
                 lines = hi_wrapped.count("\n") + 1 + en_wrapped.count("\n") + 1
                 if total_h <= max_text_height and lines <= max_lines:
                     y = (height - total_h) // 2 - 30
-                    return hi_font, hi_wrapped, en_font, en_wrapped, max(90, y)
+                    return (
+                        hi_font,
+                        hi_latin,
+                        hi_wrapped,
+                        en_font,
+                        en_wrapped,
+                        max(90, y),
+                    )
 
         hi_font = self._quote_font_for(hindi, hi_min)
+        hi_latin = self._latin_companion(hindi, hi_min)
         en_font = self._get_font(self.config.brand.body_font, en_min)
         hi_wrapped = textwrap.fill(hindi, width=12)
         en_wrapped = textwrap.fill(english, width=22)
-        hi_bbox = draw.multiline_textbbox((0, 0), hi_wrapped, font=hi_font, align="center", spacing=10)
-        en_bbox = draw.multiline_textbbox((0, 0), en_wrapped, font=en_font, align="center", spacing=8)
-        total_h = (hi_bbox[3] - hi_bbox[1]) + 28 + (en_bbox[3] - en_bbox[1])
-        return hi_font, hi_wrapped, en_font, en_wrapped, max(90, (height - total_h) // 2 - 30)
+        hi_bbox = mixed_font.multiline_bbox(
+            draw, hi_wrapped, hi_font, hi_latin, spacing=_HI_LINE_SPACING
+        )
+        en_bbox = mixed_font.multiline_bbox(
+            draw, en_wrapped, en_font, None, spacing=_EN_LINE_SPACING
+        )
+        total_h = (
+            (hi_bbox[3] - hi_bbox[1]) + _BILINGUAL_BLOCK_GAP + (en_bbox[3] - en_bbox[1])
+        )
+        return (
+            hi_font,
+            hi_latin,
+            hi_wrapped,
+            en_font,
+            en_wrapped,
+            max(90, (height - total_h) // 2 - 30),
+        )
 
     def _fit_quote_text(
         self,
@@ -230,7 +281,7 @@ class BrandTemplates:
         quote: str,
         width: int,
         height: int,
-    ) -> tuple[ImageFont.FreeTypeFont | ImageFont.ImageFont, str, int]:
+    ) -> tuple:
         sp = self.config.static_post
         max_text_height = int(height * sp.text_area_ratio)
         is_hindi = self._is_hindi(quote)
@@ -244,22 +295,26 @@ class BrandTemplates:
 
         for font_size in font_sizes:
             font = self._quote_font_for(quote, font_size)
+            latin = self._latin_companion(quote, font_size)
             for wrap_w in wrap_widths:
                 wrapped = textwrap.fill(quote, width=wrap_w)
-                bbox = draw.multiline_textbbox(
-                    (0, 0), wrapped, font=font, align="center", spacing=14,
+                bbox = mixed_font.multiline_bbox(
+                    draw, wrapped, font, latin, spacing=_HI_LINE_SPACING
                 )
                 text_h = bbox[3] - bbox[1]
                 line_count = wrapped.count("\n") + 1
                 if text_h <= max_text_height and line_count <= max_lines:
                     y = (height - text_h) // 2 - 30
-                    return font, wrapped, max(100, y)
+                    return font, latin, wrapped, max(100, y)
 
         font = self._quote_font_for(quote, size_min)
+        latin = self._latin_companion(quote, size_min)
         wrapped = textwrap.fill(quote, width=12 if is_hindi else 20)
-        bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, align="center", spacing=12)
+        bbox = mixed_font.multiline_bbox(
+            draw, wrapped, font, latin, spacing=_HI_LINE_SPACING
+        )
         text_h = bbox[3] - bbox[1]
-        return font, wrapped, max(100, (height - text_h) // 2 - 30)
+        return font, latin, wrapped, max(100, (height - text_h) // 2 - 30)
 
     def create_intro_card(self, width: int, height: int) -> Image.Image:
         return self.create_card(
@@ -377,20 +432,21 @@ class BrandTemplates:
         hook = normalize_hindi_for_render((hook_text or "").strip()) if hook_text else ""
         if hook:
             hook_font = self._get_caption_font(52)
+            hook_latin = self._latin_companion(hook, 52)
             wrapped = textwrap.fill(hook, width=22)
-            hook_bbox = draw.multiline_textbbox(
-                (0, 0), wrapped, font=hook_font, align="center", spacing=8
+            hook_bbox = mixed_font.multiline_bbox(
+                draw, wrapped, hook_font, hook_latin, spacing=8
             )
-            hook_w = hook_bbox[2] - hook_bbox[0]
             hook_h = hook_bbox[3] - hook_bbox[1]
-            hook_x = (width - hook_w) // 2
             hook_y = min(height - hook_h - 120, band_bottom + 24)
-            draw.multiline_text(
-                (hook_x, hook_y),
+            mixed_font.draw_multiline_centered(
+                draw,
                 wrapped,
-                font=hook_font,
+                width,
+                hook_y,
+                hook_font,
+                hook_latin,
                 fill=text_color,
-                align="center",
                 spacing=8,
                 stroke_width=3,
                 stroke_fill=(0, 0, 0),
@@ -415,19 +471,23 @@ class BrandTemplates:
         font: ImageFont.FreeTypeFont | ImageFont.ImageFont,
         color: tuple[int, int, int],
         stroke_width: int = 3,
-    ) -> None:
-        bbox = draw.multiline_textbbox((0, 0), text, font=font, align="center", spacing=14)
-        text_width = bbox[2] - bbox[0]
-        x = (width - text_width) // 2
-        draw.multiline_text(
-            (x, y),
+        *,
+        latin_font: ImageFont.FreeTypeFont | ImageFont.ImageFont | None = None,
+        spacing: int = _HI_LINE_SPACING,
+    ) -> int:
+        """Draw centered text; returns bottom y of the block (for bilingual gap)."""
+        stroke_fill = (0, 0, 0) if stroke_width > 0 else None
+        return mixed_font.draw_multiline_centered(
+            draw,
             text,
-            font=font,
+            width,
+            y,
+            font,
+            latin_font,
             fill=color,
-            align="center",
-            spacing=14,
+            spacing=spacing,
             stroke_width=stroke_width,
-            stroke_fill=(0, 0, 0) if stroke_width > 0 else None,
+            stroke_fill=stroke_fill,
         )
 
     def _add_watermark(self, img: Image.Image) -> None:

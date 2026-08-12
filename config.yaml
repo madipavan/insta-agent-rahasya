@@ -128,7 +128,7 @@ video:
     - local
     - pixabay
     - pexels
-  bgm_volume: 0.30
+  bgm_volume: 0.27
   voiceover_volume: 1.2
   # Retention SFX mixed under voiceover (hook, cut whooshes, cliffhanger sting)
   sfx_enabled: true

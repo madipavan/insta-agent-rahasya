@@ -60,6 +60,8 @@ class EpisodePlanner:
 
         for i, (start, end) in enumerate(ranges, start=1):
             ep_data = episodes_data[i - 1] if i - 1 < len(episodes_data) else {}
+            if not isinstance(ep_data, dict):
+                ep_data = {}
             beat = ep_data.get("plot_beat_summary", f"Episode {i}: chapters {start}-{end}.")
             cumulative = ep_data.get("cumulative_synopsis", beat)
             script_obj = ep_data.get("script")

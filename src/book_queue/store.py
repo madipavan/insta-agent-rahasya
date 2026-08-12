@@ -12,6 +12,60 @@ from src.book_queue.models import Episode, Novel
 from src.book_queue.slug import slugify_novel
 from src.book_queue.pacing import estimate_episode_count
 
+# LLM arcs sometimes nest planned_hook / beat fields as objects; sqlite3 rejects dict/list.
+_TEXT_KEYS = (
+    "text",
+    "hook",
+    "line",
+    "caption",
+    "value",
+    "summary",
+    "content",
+    "angle",
+    "cliffhanger",
+    "plot_beat_summary",
+    "cumulative_synopsis",
+    "planned_hook",
+    "planned_cliffhanger",
+    "retention_angle",
+)
+
+
+def _as_sqlite_text(value: Any) -> str:
+    """Coerce LLM/nested values to a sqlite3-bindable TEXT string."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        for key in _TEXT_KEYS:
+            nested = value.get(key)
+            if isinstance(nested, str) and nested.strip():
+                return nested.strip()
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, (list, tuple)):
+        parts = [_as_sqlite_text(item) for item in value]
+        parts = [p for p in parts if p]
+        if not parts:
+            return ""
+        if len(parts) == 1:
+            return parts[0]
+        return json.dumps(parts, ensure_ascii=False)
+    if isinstance(value, (bool, int, float)):
+        return str(value)
+    return str(value)
+
+
+def _as_sqlite_json_text(value: Any) -> str:
+    """Coerce script/JSON payloads; never peel nested keys into a bare string."""
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
+
 
 class Database:
     def __init__(self, db_path: Path) -> None:
@@ -255,6 +309,14 @@ class Database:
         retention_angle: str = "",
         script_json: str = "",
     ) -> int:
+        # Parameter 8 is planned_hook — LLMs often return dicts here.
+        plot_beat_summary = _as_sqlite_text(plot_beat_summary)
+        cumulative_synopsis = _as_sqlite_text(cumulative_synopsis)
+        status = _as_sqlite_text(status) or "pending"
+        planned_hook = _as_sqlite_text(planned_hook)
+        planned_cliffhanger = _as_sqlite_text(planned_cliffhanger)
+        retention_angle = _as_sqlite_text(retention_angle)
+        script_json = _as_sqlite_json_text(script_json)
         with self._connect() as conn:
             cur = conn.execute(
                 """
@@ -310,7 +372,11 @@ class Database:
                 UPDATE episodes SET plot_beat_summary = ?, cumulative_synopsis = ?
                 WHERE id = ?
                 """,
-                (plot_beat_summary, cumulative_synopsis, episode_id),
+                (
+                    _as_sqlite_text(plot_beat_summary),
+                    _as_sqlite_text(cumulative_synopsis),
+                    episode_id,
+                ),
             )
 
     def set_episode_status(self, episode_id: int, status: str) -> None:
@@ -616,7 +682,12 @@ class Database:
                 UPDATE novels SET novel_logline = ?, story_summary = ?, retention_strategy = ?
                 WHERE id = ?
                 """,
-                (novel_logline, story_summary, retention_strategy, novel_id),
+                (
+                    _as_sqlite_text(novel_logline),
+                    _as_sqlite_text(story_summary),
+                    _as_sqlite_text(retention_strategy),
+                    novel_id,
+                ),
             )
 
     def set_novel_pdf_path(self, novel_id: int, pdf_path: str) -> None:
@@ -630,7 +701,7 @@ class Database:
         with self._connect() as conn:
             conn.execute(
                 "UPDATE episodes SET script_json = ? WHERE id = ?",
-                (script_json, episode_id),
+                (_as_sqlite_json_text(script_json), episode_id),
             )
 
     def get_episode_script_json(self, novel_id: int, episode_num: int) -> str:

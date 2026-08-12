@@ -12,36 +12,44 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from src.agents.llm_factory import get_chat_model
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
+from src.script_gen.craft_rules import SCRIPT_CRAFT_RULES
 from src.utils.json_parse import parse_llm_json
 from src.utils.llm_text import extract_llm_text
 from src.utils.llm_errors import is_llm_limit_error
 
-WRITER_SYSTEM = """You are a Hindi Suspense Scriptwriter for Rahasya.exe Instagram reels.
+WRITER_SYSTEM = f"""You are a Hinglish Suspense Scriptwriter for Rahasya.exe Instagram reels.
 Write ORIGINAL paraphrase only — never quote the book.
 Output valid JSON only.
 
-You write like a Hindi thriller film dubbing artist — emotional, tense, cinematic.
-Every script is a complete mini-story: specific characters, places, events, stakes.
-NEVER write vague filler like "एक आदमी जो अपनी जान बचाने की कोशिश कर रहा है".
-Name the hero. Describe what happened. Build tension scene by scene.
-Use ellipsis (…) for dramatic pauses before reveals.
-Add emotional beats — fear, suspense, shock — not flat narration.
-Do NOT explain or recap the previous episode. Cover NEW events only.
-HIT the minimum character count — short scripts are rejected."""
+{SCRIPT_CRAFT_RULES}
 
-EDITOR_SYSTEM = """You are a Retention Editor for Hindi thriller reels.
+Every script is a complete mini-story: specific characters, places, events, stakes.
+NEVER write vague filler. Name the hero. Build tension scene by scene.
+Use ellipsis (…) for dramatic pauses before reveals.
+Do NOT explain or recap the previous episode. Cover NEW events only.
+HIT the minimum character count — short scripts are rejected.
+Also fill english_voiceover + english_on_screen for bilingual subtitles."""
+
+EDITOR_SYSTEM = f"""You are a Retention Editor for Hinglish thriller reels.
 Your job is to EXPAND thin scripts and sharpen hooks/cliffhangers.
+
+{SCRIPT_CRAFT_RULES}
+
 If the script is under the minimum character count, ADD more specific story beats.
 Cut only true filler. Keep character names, scene details, emotional beats.
 Enforce character limits exactly. Output valid JSON only. NO recap phrases.
 Do NOT add previous-episode explanations. Keep only THIS episode's new events.
-Scripts must sound like film dubbing — not a robot reading words."""
+Ensure caption_hook or caption_teaser ends with ?. Keep english_voiceover in sync."""
 
-REFINE_EDITOR_SYSTEM = """You are a Retention Editor for Hindi thriller reels.
+REFINE_EDITOR_SYSTEM = f"""You are a Retention Editor for Hinglish thriller reels.
 Follow the FIX REQUIRED instruction exactly:
+
+{SCRIPT_CRAFT_RULES}
+
 - If too short: expand with specific plot beats (never vague filler).
 - If too long: shorten — cut redundant lines, keep hook, key beats, cliffhanger.
-Never add recap. Output valid JSON only. Enforce character limits exactly."""
+Never add recap. Output valid JSON only. Enforce character limits exactly.
+Keep english_voiceover aligned with the spoken script."""
 
 MAX_LLM_ATTEMPTS = 3
 
@@ -105,16 +113,16 @@ class ScriptCrew:
                 f"Edit this script JSON. HARD LIMIT: voiceover_script at most {max_chars} chars.\n"
                 f"The script is TOO LONG — CUT and tighten. Remove redundant sentences and filler.\n"
                 f"Keep the hook, essential plot beats, and cliffhanger. Do NOT add new scenes.\n"
-                f"episode_only_script = voiceover_script.\n"
-                f"NO recap. Named characters. Cinematic dubbing tone.\n\n"
+                f"episode_only_script = voiceover_script. Keep english_voiceover aligned.\n"
+                f"NO recap. Named characters. Hinglish stakes-first tone.\n\n"
                 f"{json.dumps(draft, ensure_ascii=False)}"
             )
         return (
             f"Edit this script JSON. HARD LIMIT: voiceover_script {min_chars}-{max_chars} chars.\n"
             f"If under {min_chars} chars, EXPAND with more specific plot events and dialogue beats.\n"
-            f"episode_only_script = voiceover_script.\n"
-            f"NO recap. Named characters. Cinematic dubbing tone. Dramatic pauses with …\n"
-            f"Strong hook. Sharp cliffhanger.\n\n"
+            f"episode_only_script = voiceover_script. Keep english_voiceover aligned.\n"
+            f"NO recap. Named characters. Hinglish. Dramatic pauses with …\n"
+            f"Strong danger/shock/question hook. Sharp cliffhanger. Caption must ask a plot ?.\n\n"
             f"{json.dumps(draft, ensure_ascii=False)}"
         )
 

@@ -11,6 +11,7 @@ from src.book_queue.models import EpisodeContext, ScriptOutput
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.static_post.splitter import split_into_slides_capped
+from src.visuals.bilingual import bilingual_slide_texts, split_parallel
 from src.visuals.stock import StockResolver
 
 
@@ -81,12 +82,24 @@ class StaticPostGenerator:
         if not source:
             source = (script.static_post_text or script.hook or "").strip()
         slides = split_into_slides_capped(source, max_chars=max_chars, max_slides=max_slides)
+        if not slides:
+            slides = [script.static_post_text or script.hook or "..."]
+
+        english = (script.english_voiceover or "").strip()
+        if english and slides:
+            # Slightly shorter English chunks so dual-language slides stay compact
+            en_chars = max(60, int(max_chars * 0.85))
+            en_slides = split_into_slides_capped(english, max_chars=en_chars, max_slides=max_slides)
+            if len(en_slides) != len(slides):
+                en_slides = split_parallel(english, len(slides))
+            slides = bilingual_slide_texts(slides, en_slides)
+
         if slides:
             self.logger.info(
                 f"static_post | {len(source)} chars → {len(slides)} slides "
-                f"(max {max_slides}, ~{max_chars} chars/slide)"
+                f"(max {max_slides}, ~{max_chars} chars/slide, bilingual={bool(english)})"
             )
-        return slides or [script.static_post_text or script.hook or "..."]
+        return slides
 
     def _resolve_background(
         self,

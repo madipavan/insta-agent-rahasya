@@ -17,6 +17,7 @@ from src.agents.llm_factory import get_chat_model
 from src.book_queue.models import Novel
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
+from src.script_gen.craft_rules import SCRIPT_CRAFT_RULES
 from src.script_gen.limits import script_char_limits
 from src.utils.json_parse import parse_llm_json
 from src.utils.llm_text import extract_llm_text
@@ -28,24 +29,29 @@ Read the attached novel PDF and produce an original paraphrase summary — never
 Focus on characters, mysteries, stakes, and retention-worthy twists.
 Output valid JSON only."""
 
-PLAN_SYSTEM = """You are a Story Arc Strategist for binge Instagram thriller reels.
+PLAN_SYSTEM = f"""You are a Story Arc Strategist for binge Instagram thriller reels.
 Design up to 12 UNIQUE episodes from the novel summary.
 Rules:
 - Each episode must cover NEW events only — never repeat another episode's plot.
 - Do NOT recap or explain the previous episode in the next beat.
 - Chain cliffhangers for retention, but open each episode in medias res.
+- planned_hook must be danger, shock, or a direct question — not scene-setting.
 - Name characters, places, and specific events.
-- Original paraphrase only. Output valid JSON only."""
+- Original paraphrase only. Output valid JSON only.
 
-SCRIPT_BATCH_SYSTEM = """You write Hindi thriller reel voiceovers for Rahasya.exe.
+{SCRIPT_CRAFT_RULES}"""
+
+SCRIPT_BATCH_SYSTEM = f"""You write Hinglish thriller reel voiceovers for Rahasya.exe.
 Rules:
-- Devanagari Hindi only for voiceover_script / episode_only_script.
+- Spoken Hinglish for voiceover_script / episode_only_script (Devanagari + common English words).
 - Do NOT explain or summarize the previous episode. No recap phrases.
 - Each episode must be a NEW mini-story beat with hook → tension → cliffhanger.
-- Named characters, cinematic dubbing tone, dramatic pauses (…).
+- Named characters, stakes-first opener, dramatic pauses (…).
 - episode_only_script MUST equal voiceover_script.
-- Hit the exact character limits. Output valid JSON only."""
+- Also fill english_voiceover + english_on_screen for bilingual subtitles.
+- Hit the exact character limits. Output valid JSON only.
 
+{SCRIPT_CRAFT_RULES}"""
 
 class NovelScriptBatchCrew:
     """PDF → summarize (multimodal) → plan ≤12 beats → write all Hindi scripts."""
@@ -217,12 +223,14 @@ class NovelScriptBatchCrew:
             f"Retention strategy: {summary.get('retention_strategy', '')}\n"
             f"Total episodes in series: {total}\n"
             f"Previous cliffhanger energy (do NOT retell/explain it): {previous_cliffhanger or 'N/A — series start'}\n\n"
-            f"Write Hindi scripts for these episodes ONLY:\n{json.dumps(briefs, ensure_ascii=False)}\n\n"
-            f"HARD LIMITS per episode: voiceover_script {min_chars}-{max_chars} Hindi chars.\n"
+            f"Write Hinglish scripts for these episodes ONLY:\n{json.dumps(briefs, ensure_ascii=False)}\n\n"
+            f"HARD LIMITS per episode: voiceover_script {min_chars}-{max_chars} Hinglish chars.\n"
             "Return JSON: {\"scripts\": [ {episode_num, voiceover_script, episode_only_script, "
-            "hook, cliffhanger, caption_hook, caption_teaser, static_post_text, "
-            "stock_keywords, on_screen_text} ] }\n"
-            "Do NOT explain the last episode. Each script must cover NEW events only."
+            "english_voiceover, hook, cliffhanger, caption_hook, caption_teaser, static_post_text, "
+            "stock_keywords, on_screen_text, english_on_screen} ] }\n"
+            "Do NOT explain the last episode. Each script must cover NEW events only. "
+            "First line = danger/shock/question. Caption must ask a plot ?. "
+            "stock_keywords must name setting + subject (not mood-only)."
         )
         nums = [int(ep.get("episode_num") or 0) for ep in batch]
         self.logger.info(f"batch_crew | write scripts eps {nums}")
@@ -239,8 +247,18 @@ class NovelScriptBatchCrew:
             script = by_num.get(num) or (raw_scripts[len(out)] if len(raw_scripts) > len(out) else {})
             if not isinstance(script, dict):
                 script = {}
-            script = normalize_script_dict(script, max_chars)
-            err = validate_script_dict(script, min_chars, max_chars)
+            script = normalize_script_dict(
+                script,
+                max_chars,
+                style_tag=getattr(self.config, "stock_style_tag", ""),
+            )
+            err = validate_script_dict(
+                script,
+                min_chars,
+                max_chars,
+                style_tag=getattr(self.config, "stock_style_tag", ""),
+                brand_hashtag=getattr(self.config, "brand_hashtag", "#RahasyaExe"),
+            )
             if err:
                 self.logger.warn("batch_crew", f"ep {num} invalid ({err}) — rewriting")
                 script = self._rewrite_one(
@@ -287,12 +305,16 @@ class NovelScriptBatchCrew:
         # Accept either wrapped or flat
         if "voiceover_script" not in data and isinstance(data.get("scripts"), list) and data["scripts"]:
             data = data["scripts"][0]
-        script = normalize_script_dict(data, max_chars)
+        style_tag = getattr(self.config, "stock_style_tag", "")
+        brand = getattr(self.config, "brand_hashtag", "#RahasyaExe")
+        script = normalize_script_dict(data, max_chars, style_tag=style_tag)
         # Final soft accept: if still short, keep normalized draft padded lightly via rewrite failure
-        if validate_script_dict(script, max(0, min_chars - 30), max_chars):
+        if validate_script_dict(
+            script, max(0, min_chars - 30), max_chars, style_tag=style_tag, brand_hashtag=brand
+        ):
             # Prefer rewritten if it has any body
             if not (script.get("voiceover_script") or "").strip():
-                return normalize_script_dict(draft, max_chars)
+                return normalize_script_dict(draft, max_chars, style_tag=style_tag)
         return script
 
     def _invoke_json_with_pdf(self, system: str, prompt: str, pdf_path: Path) -> dict[str, Any]:

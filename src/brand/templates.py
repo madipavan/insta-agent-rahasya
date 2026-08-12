@@ -97,7 +97,16 @@ class BrandTemplates:
         slide_label: str = "",
     ) -> Image.Image:
         """Moody quote post — cinematic background, centered text, bottom-left watermark."""
-        quote = normalize_hindi_for_render(quote) if self._is_hindi(quote) else quote
+        # Preserve bilingual Hindi / English blocks separated by blank line
+        parts = [p.strip() for p in (quote or "").split("\n\n") if p.strip()]
+        if len(parts) >= 2:
+            hi_part = normalize_hindi_for_render(parts[0]) if self._is_hindi(parts[0]) else parts[0]
+            en_part = normalize_hindi_for_render(parts[1]) if self._is_hindi(parts[1]) else parts[1]
+            quote_hi, quote_en = hi_part, en_part
+        else:
+            quote_hi = normalize_hindi_for_render(quote) if self._is_hindi(quote) else quote
+            quote_en = ""
+
         if background is not None:
             img = background.convert("RGB").resize((width, height), Image.Resampling.LANCZOS)
             img = ImageEnhance.Brightness(img).enhance(0.45)
@@ -114,17 +123,44 @@ class BrandTemplates:
 
         draw = ImageDraw.Draw(img)
         sp = self.config.static_post
-        font, wrapped, text_y = self._fit_quote_text(draw, quote, width, height)
 
-        self._draw_centered_text(
-            draw,
-            wrapped,
-            width,
-            text_y,
-            font,
-            (245, 245, 245),
-            stroke_width=sp.text_stroke_width,
-        )
+        if quote_en:
+            hi_font, hi_wrapped, en_font, en_wrapped, text_y = self._fit_bilingual_quote(
+                draw, quote_hi, quote_en, width, height
+            )
+            self._draw_centered_text(
+                draw,
+                hi_wrapped,
+                width,
+                text_y,
+                hi_font,
+                (245, 245, 245),
+                stroke_width=sp.text_stroke_width,
+            )
+            hi_bbox = draw.multiline_textbbox(
+                (0, 0), hi_wrapped, font=hi_font, align="center", spacing=10
+            )
+            en_y = text_y + (hi_bbox[3] - hi_bbox[1]) + 28
+            self._draw_centered_text(
+                draw,
+                en_wrapped,
+                width,
+                en_y,
+                en_font,
+                (210, 210, 210),
+                stroke_width=max(0, sp.text_stroke_width - 1),
+            )
+        else:
+            font, wrapped, text_y = self._fit_quote_text(draw, quote_hi, width, height)
+            self._draw_centered_text(
+                draw,
+                wrapped,
+                width,
+                text_y,
+                font,
+                (245, 245, 245),
+                stroke_width=sp.text_stroke_width,
+            )
 
         watermark_font = self._get_font(self.config.brand.body_font, 28)
         watermark = self.config.brand.watermark_text
@@ -142,6 +178,51 @@ class BrandTemplates:
             )
 
         return img
+
+    def _fit_bilingual_quote(
+        self,
+        draw: ImageDraw.ImageDraw,
+        hindi: str,
+        english: str,
+        width: int,
+        height: int,
+    ) -> tuple:
+        """Fit compact Hindi + smaller English blocks into the text area."""
+        sp = self.config.static_post
+        max_text_height = int(height * sp.text_area_ratio)
+        hi_max = sp.quote_font_size_max
+        hi_min = sp.quote_font_size_min
+        en_max = getattr(sp, "english_quote_font_size_max", 24) or 24
+        en_min = getattr(sp, "english_quote_font_size_min", 18) or 18
+        max_lines = sp.max_lines_per_slide
+
+        for hi_size in range(hi_max, hi_min - 1, -2):
+            en_size = max(en_min, min(en_max, hi_size - 6))
+            hi_font = self._quote_font_for(hindi, hi_size)
+            en_font = self._get_font(self.config.brand.body_font, en_size)
+            for hi_wrap, en_wrap in ((16, 28), (14, 26), (12, 24), (10, 22)):
+                hi_wrapped = textwrap.fill(hindi, width=hi_wrap)
+                en_wrapped = textwrap.fill(english, width=en_wrap)
+                hi_bbox = draw.multiline_textbbox(
+                    (0, 0), hi_wrapped, font=hi_font, align="center", spacing=10
+                )
+                en_bbox = draw.multiline_textbbox(
+                    (0, 0), en_wrapped, font=en_font, align="center", spacing=8
+                )
+                total_h = (hi_bbox[3] - hi_bbox[1]) + 28 + (en_bbox[3] - en_bbox[1])
+                lines = hi_wrapped.count("\n") + 1 + en_wrapped.count("\n") + 1
+                if total_h <= max_text_height and lines <= max_lines:
+                    y = (height - total_h) // 2 - 30
+                    return hi_font, hi_wrapped, en_font, en_wrapped, max(90, y)
+
+        hi_font = self._quote_font_for(hindi, hi_min)
+        en_font = self._get_font(self.config.brand.body_font, en_min)
+        hi_wrapped = textwrap.fill(hindi, width=12)
+        en_wrapped = textwrap.fill(english, width=22)
+        hi_bbox = draw.multiline_textbbox((0, 0), hi_wrapped, font=hi_font, align="center", spacing=10)
+        en_bbox = draw.multiline_textbbox((0, 0), en_wrapped, font=en_font, align="center", spacing=8)
+        total_h = (hi_bbox[3] - hi_bbox[1]) + 28 + (en_bbox[3] - en_bbox[1])
+        return hi_font, hi_wrapped, en_font, en_wrapped, max(90, (height - total_h) // 2 - 30)
 
     def _fit_quote_text(
         self,

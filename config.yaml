@@ -7,9 +7,11 @@ brand:
   quote_font: "C:/Windows/Fonts/georgiab.ttf"
   caption_font: "assets/fonts/AnekDevanagari-ExtraBold.ttf"
   hindi_quote_font: "assets/fonts/NotoSerifDevanagari-Regular.ttf"
-  caption_font_size: 52
-  hook_font_size: 58
-  caption_outline: 4
+  # Compact bilingual (Hindi + English) burned-in captions
+  caption_font_size: 34
+  hook_font_size: 38
+  english_caption_font_size: 28
+  caption_outline: 3
   watermark_text: "Rahasya.exe"
   logo_path: "assets/brand/logo.png"
   intro_duration_sec: 1.0
@@ -30,13 +32,13 @@ max_episodes: 12
 post_time: "19:30"
 timezone: "Asia/Kolkata"
 
-# Voice: ElevenLabs (primary) → Sarvam → edge-tts fallback
+# Voice: ElevenLabs Viraj (primary) → Sarvam shubh → Edge MadhurNeural (male chain)
 voice_provider: elevenlabs
-voice_name: Vikram
-edge_tts_voice: "hi-IN-SwaraNeural"
+voice_name: Viraj
+edge_tts_voice: "hi-IN-MadhurNeural"
 voice_language: hindi
 # ElevenLabs Creator — https://elevenlabs.io/app/developers/api-keys
-voice_id: "q6lbiuyq6L1H58xIpLAN"
+voice_id: "P1bg08DkjqiVEzOn76yG"  # Viraj — Suspenseful and Engaging Narrator
 elevenlabs_model: eleven_multilingual_v2
 elevenlabs_stability: 0.35
 elevenlabs_similarity_boost: 0.75
@@ -48,12 +50,12 @@ elevenlabs_fallback: true
 voiceover_cache: true
 # Sarvam AI — https://dashboard.sarvam.ai (₹100 free credits on signup)
 sarvam_model: bulbul:v3
-sarvam_speaker: priya
+sarvam_speaker: shubh
 sarvam_language_code: hi-IN
-sarvam_pace: 0.78
+sarvam_pace: 0.90
 sarvam_temperature: 0.75
 sarvam_fallback: true
-# Fish Audio (optional — https://fish.audio/app/api-keys)
+# Fish Audio disabled — avoid unknown-gender failover swapping narrator
 fish_audio_model: s2.1-pro-free
 fish_audio_voice_id: "bc2253b3f34e4b769cb87636db31a2c7"
 fish_audio_speed: 0.80
@@ -61,18 +63,20 @@ fish_audio_temperature: 0.85
 fish_audio_latency: normal
 fish_audio_sentence_mode: true
 fish_audio_sentence_pause_sec: 0.35
-fish_audio_fallback: true
+fish_audio_fallback: false
 
 # Target ~80s voiceover (+ intro/outro cards ≈ 82s total reel)
 script_min_seconds: 75
 script_max_seconds: 80
 
-# Expressive dubbing-style TTS (edge-tts prosody)
-edge_tts_rate: "-8%"
+# Expressive dubbing-style TTS (edge-tts prosody) — slightly less slow for Hinglish density
+edge_tts_rate: "-4%"
 edge_tts_pitch: "-2Hz"
 
 cta: "Follow for the next part 👀"
-hashtags: "#thrillerbooks #suspensenovel #bookstagram #rahaysaexe #booktok"
+brand_hashtag: "#RahasyaExe"
+hashtags: "#thrillerbooks #suspensenovel #bookstagram #RahasyaExe #booktok"
+stock_style_tag: "noir lighting, teal-blue color grade, cinematic"
 review_required: false
 # false = generate now, publish later via `python main.py publish` (or publish workflow at post_time)
 auto_publish: false
@@ -99,15 +103,18 @@ static_post:
   width: 1080
   height: 1350
   layout_rotation: quote
-  # ~88 chars × 10 slides ≈ full 80s reel script (825–880 Hindi chars)
+  # ~88 chars × 10 slides ≈ full 80s reel script (750–880 Hinglish chars)
   chars_per_slide: 88
   max_slides: 10
-  quote_font_size_max: 44
-  quote_font_size_min: 30
+  # Compact bilingual Hindi + English on carousel slides
+  quote_font_size_max: 30
+  quote_font_size_min: 22
+  english_quote_font_size_max: 24
+  english_quote_font_size_min: 18
   hindi_bold: false
   text_stroke_width: 1
-  max_lines_per_slide: 10
-  text_area_ratio: 0.65
+  max_lines_per_slide: 12
+  text_area_ratio: 0.70
 
 video:
   width: 1080
@@ -129,7 +136,7 @@ video:
   sfx_whoosh_volume: 0.22
   sfx_cliffhanger_volume: 0.30
   sfx_cliffhanger_before_end_sec: 8.0
-  # Generate per-novel music + SFX via ElevenLabs once; reuse for all episodes
+  # Generate per-novel ElevenLabs music + SFX once; reuse for all episodes
   elevenlabs_audio_enabled: true
   elevenlabs_music_length_ms: 30000
   elevenlabs_music_model: music_v1

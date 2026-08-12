@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
 
 
 @dataclass
@@ -60,6 +59,8 @@ class ScriptOutput:
     on_screen_text: list[str]
     recap_opener: str = ""
     episode_only_script: str = ""
+    english_voiceover: str = ""
+    english_on_screen: list[str] = field(default_factory=list)
 
     @staticmethod
     def _coerce_text(value: object) -> str:
@@ -99,12 +100,38 @@ class ScriptOutput:
         text = str(value).strip()
         return [text] if text else []
 
+    @staticmethod
+    def _coerce_keywords(value: object) -> list[str]:
+        """Parse stock keywords; split comma-separated strings (never char-iterate)."""
+        if value is None:
+            return []
+        if isinstance(value, str):
+            parts = [p.strip() for p in value.split(",")]
+            return [p for p in parts if p]
+        if isinstance(value, (list, tuple)):
+            out: list[str] = []
+            for item in value:
+                if isinstance(item, str):
+                    # LLM sometimes returns one comma-joined element
+                    if "," in item and len(item) > 24:
+                        out.extend(p.strip() for p in item.split(",") if p.strip())
+                    elif item.strip():
+                        out.append(item.strip())
+                else:
+                    text = ScriptOutput._coerce_text(item)
+                    if text:
+                        out.append(text)
+            return out
+        text = str(value).strip()
+        return [text] if text else []
+
     @classmethod
     def from_dict(cls, data: dict) -> "ScriptOutput":
-        keywords = [k for k in data.get("stock_keywords", ["night", "shadow"]) if isinstance(k, str)]
-        keywords = [k for k in keywords if k.lower() not in ("esmodule", "module", "default")]
-        if not keywords:
-            keywords = ["cinematic", "dark", "mystery"]
+        keywords = [
+            k
+            for k in cls._coerce_keywords(data.get("stock_keywords"))
+            if k.lower() not in ("esmodule", "module", "default")
+        ]
         episode_only = cls._coerce_text(data.get("episode_only_script", ""))
         voiceover = cls._coerce_text(data.get("voiceover_script", ""))
         recap = cls._coerce_text(data.get("recap_opener", ""))
@@ -129,6 +156,8 @@ class ScriptOutput:
             on_screen_text=cls._coerce_text_list(data.get("on_screen_text", [])),
             recap_opener="",
             episode_only_script=body,
+            english_voiceover=cls._coerce_text(data.get("english_voiceover", "")),
+            english_on_screen=cls._coerce_text_list(data.get("english_on_screen", [])),
         )
 
     def episode_script(self) -> str:

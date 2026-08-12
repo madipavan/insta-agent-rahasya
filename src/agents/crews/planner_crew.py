@@ -11,23 +11,30 @@ from src.agents.llm_factory import get_chat_model
 from src.book_queue.models import Novel
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
+from src.script_gen.craft_rules import SCRIPT_CRAFT_RULES
 from src.utils.json_parse import parse_llm_json
 from src.utils.llm_text import extract_llm_text
 
-STRATEGIST_SYSTEM = """You are a Story Arc Strategist for Instagram suspense reels.
+STRATEGIST_SYSTEM = f"""You are a Story Arc Strategist for Instagram suspense reels.
 Design binge-worthy episodic arcs with genuine storytelling — not vague summaries.
 Each episode must name characters, places, and specific plot events.
 Episodes chain like a TV series but NEVER recap the previous episode in the next beat.
 Every episode must cover UNIQUE new events — no repeated plots.
-Original paraphrase only — never quote the book. Output valid JSON only."""
+planned_hook must be danger, shock, or a direct question — NEVER pure scene-setting or backstory.
+Original paraphrase only — never quote the book. Output valid JSON only.
 
-BEAT_WRITER_SYSTEM = """You are an Episode Beat Writer. Refine arc JSON for scriptwriters.
+{SCRIPT_CRAFT_RULES}"""
+
+BEAT_WRITER_SYSTEM = f"""You are an Episode Beat Writer. Refine arc JSON for scriptwriters.
 First create a tight novel-level story bible (logline + full-story summary in 6-8 sentences).
 Then ensure each episode has: plot_beat_summary (specific events, names, stakes),
 cumulative_synopsis (max 3 sentences, position only — not a spoken recap),
 planned_hook, planned_cliffhanger, retention_angle.
+planned_hook = danger/shock/question only (no "एक दिन…" / time-place setup).
 Episodes must feel connected WITHOUT explaining last episode.
-All plot beats must be distinct. Output valid JSON only."""
+All plot beats must be distinct. Output valid JSON only.
+
+{SCRIPT_CRAFT_RULES}"""
 
 
 class PlannerCrew:

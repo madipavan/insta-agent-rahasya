@@ -6,6 +6,7 @@ import re
 
 from src.book_queue.models import EpisodeContext
 from src.config import AppConfig
+from src.hashtags.brand import DEFAULT_BRAND_HASHTAG, normalize_brand_hashtag
 from src.pipeline.logger import PipelineLogger
 from src.scheduler.meta import MetaScheduler
 
@@ -79,7 +80,7 @@ class HashtagFetcher:
             f"#ep{ep}",
             _slug_hashtag(novel),
             _slug_hashtag(author),
-            "#rahaysaexe",
+            getattr(self.config, "brand_hashtag", DEFAULT_BRAND_HASHTAG) or DEFAULT_BRAND_HASHTAG,
         ]
 
         search_queries = list(SEARCH_QUERIES)
@@ -95,7 +96,10 @@ class HashtagFetcher:
                 self.logger.warn("hashtags", f"Meta search failed: {exc}")
 
         ranked = self._rank_and_dedupe(base, meta_tags, curated, episode_tags)
-        return " ".join(ranked[: self.MAX_HASHTAGS])
+        joined = " ".join(ranked[: self.MAX_HASHTAGS])
+        locked = getattr(self.config, "brand_hashtag", DEFAULT_BRAND_HASHTAG) or DEFAULT_BRAND_HASHTAG
+        joined, _ = normalize_brand_hashtag(joined, locked)
+        return joined
 
     def _parse_base_tags(self, raw: str) -> list[str]:
         tags = []

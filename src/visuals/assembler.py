@@ -13,6 +13,7 @@ from src.brand.templates import BrandTemplates
 from src.book_queue.models import EpisodeContext, ScriptOutput
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
+from src.visuals.bilingual import make_bilingual_segments
 from src.visuals.caption_renderer import ass_filter_path, write_ass_subtitles
 from src.visuals.captions import CaptionGenerator, CaptionSegment
 from src.visuals.sfx import SfxMixer, build_sfx_placements
@@ -97,7 +98,15 @@ class ReelAssembler:
                         style="Hook",
                     )
                 ]
-                segments = hook_segments + segments
+                # Skip overlapping Whisper text during hook window
+                rest = [s for s in segments if s.start >= min(3.0, main_dur) - 0.05]
+                segments = hook_segments + rest
+
+            segments = make_bilingual_segments(
+                segments,
+                script.english_voiceover,
+                english_on_screen=script.english_on_screen,
+            )
 
             self._overlay_captions(main_video, captioned, segments, width, height, tmp_dir)
 

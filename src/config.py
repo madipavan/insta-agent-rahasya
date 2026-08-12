@@ -23,9 +23,10 @@ class BrandConfig:
     quote_font: str = "C:/Windows/Fonts/georgiab.ttf"
     caption_font: str = "assets/fonts/AnekDevanagari-ExtraBold.ttf"
     hindi_quote_font: str = "assets/fonts/NotoSerifDevanagari-Regular.ttf"
-    caption_font_size: int = 52
-    hook_font_size: int = 58
-    caption_outline: int = 4
+    caption_font_size: int = 34
+    hook_font_size: int = 38
+    english_caption_font_size: int = 28
+    caption_outline: int = 3
     watermark_text: str = "Rahasya.exe"
     logo_path: str = "assets/brand/logo.png"
     intro_duration_sec: float = 1.0
@@ -45,12 +46,14 @@ class StaticPostConfig:
     layout_rotation: str = "quote"
     chars_per_slide: int = 88
     max_slides: int = 10
-    quote_font_size_max: int = 44
-    quote_font_size_min: int = 30
+    quote_font_size_max: int = 30
+    quote_font_size_min: int = 22
+    english_quote_font_size_max: int = 24
+    english_quote_font_size_min: int = 18
     hindi_bold: bool = False
     text_stroke_width: int = 1
-    max_lines_per_slide: int = 10
-    text_area_ratio: float = 0.65
+    max_lines_per_slide: int = 12
+    text_area_ratio: float = 0.70
 
 
 @dataclass
@@ -108,11 +111,11 @@ class AppConfig:
     post_time: str = "19:30"
     timezone: str = "Asia/Kolkata"
     voice_provider: str = "elevenlabs"
-    voice_id: str = ""
-    voice_name: str = "Tarini"
+    voice_id: str = "P1bg08DkjqiVEzOn76yG"
+    voice_name: str = "Viraj"
     voice_language: str = "hindi"
-    edge_tts_voice: str = "hi-IN-SwaraNeural"
-    edge_tts_rate: str = "-8%"
+    edge_tts_voice: str = "hi-IN-MadhurNeural"
+    edge_tts_rate: str = "-4%"
     edge_tts_pitch: str = "-2Hz"
     elevenlabs_model: str = "eleven_multilingual_v2"
     elevenlabs_stability: float = 0.35
@@ -131,17 +134,19 @@ class AppConfig:
     fish_audio_latency: str = "normal"
     fish_audio_sentence_mode: bool = True
     fish_audio_sentence_pause_sec: float = 0.35
-    fish_audio_fallback: bool = True
+    fish_audio_fallback: bool = False
     sarvam_model: str = "bulbul:v3"
-    sarvam_speaker: str = "priya"
+    sarvam_speaker: str = "shubh"
     sarvam_language_code: str = "hi-IN"
-    sarvam_pace: float = 0.78
+    sarvam_pace: float = 0.90
     sarvam_temperature: float = 0.75
     sarvam_fallback: bool = True
     script_min_seconds: int = 75
     script_max_seconds: int = 80
     cta: str = "Follow for the next part 👀"
-    hashtags: str = "#thrillerbooks #suspensenovel #bookstagram"
+    hashtags: str = "#thrillerbooks #suspensenovel #bookstagram #RahasyaExe #booktok"
+    brand_hashtag: str = "#RahasyaExe"
+    stock_style_tag: str = "noir lighting, teal-blue color grade, cinematic"
     review_required: bool = True
     auto_publish: bool = False
     min_publish_delay_hours: int = 20
@@ -214,11 +219,11 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         post_time=raw.get("post_time", "19:30"),
         timezone=raw.get("timezone", "Asia/Kolkata"),
         voice_provider=raw.get("voice_provider", "elevenlabs"),
-        voice_id=raw.get("voice_id", ""),
-        voice_name=raw.get("voice_name", "Tarini"),
+        voice_id=raw.get("voice_id", "P1bg08DkjqiVEzOn76yG"),
+        voice_name=raw.get("voice_name", "Viraj"),
         voice_language=raw.get("voice_language", "hindi"),
-        edge_tts_voice=raw.get("edge_tts_voice", "hi-IN-SwaraNeural"),
-        edge_tts_rate=raw.get("edge_tts_rate", "-8%"),
+        edge_tts_voice=raw.get("edge_tts_voice", "hi-IN-MadhurNeural"),
+        edge_tts_rate=raw.get("edge_tts_rate", "-4%"),
         edge_tts_pitch=raw.get("edge_tts_pitch", "-2Hz"),
         elevenlabs_model=raw.get("elevenlabs_model", "eleven_multilingual_v2"),
         elevenlabs_stability=float(raw.get("elevenlabs_stability", 0.35)),
@@ -237,17 +242,25 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         fish_audio_latency=raw.get("fish_audio_latency", "normal"),
         fish_audio_sentence_mode=raw.get("fish_audio_sentence_mode", True),
         fish_audio_sentence_pause_sec=float(raw.get("fish_audio_sentence_pause_sec", 0.35)),
-        fish_audio_fallback=raw.get("fish_audio_fallback", True),
+        fish_audio_fallback=raw.get("fish_audio_fallback", False),
         sarvam_model=raw.get("sarvam_model", "bulbul:v3"),
-        sarvam_speaker=raw.get("sarvam_speaker", "priya"),
+        sarvam_speaker=raw.get("sarvam_speaker", "shubh"),
         sarvam_language_code=raw.get("sarvam_language_code", "hi-IN"),
-        sarvam_pace=float(raw.get("sarvam_pace", 0.78)),
+        sarvam_pace=float(raw.get("sarvam_pace", 0.90)),
         sarvam_temperature=float(raw.get("sarvam_temperature", 0.75)),
         sarvam_fallback=raw.get("sarvam_fallback", True),
         script_min_seconds=raw.get("script_min_seconds", 75),
         script_max_seconds=raw.get("script_max_seconds", 80),
         cta=raw.get("cta", "Follow for the next part 👀"),
-        hashtags=raw.get("hashtags", "#thrillerbooks"),
+        hashtags=raw.get(
+            "hashtags",
+            "#thrillerbooks #suspensenovel #bookstagram #RahasyaExe #booktok",
+        ),
+        brand_hashtag=raw.get("brand_hashtag", "#RahasyaExe"),
+        stock_style_tag=raw.get(
+            "stock_style_tag",
+            "noir lighting, teal-blue color grade, cinematic",
+        ),
         review_required=raw.get("review_required", True),
         auto_publish=raw.get("auto_publish", False),
         min_publish_delay_hours=int(raw.get("min_publish_delay_hours", 20)),

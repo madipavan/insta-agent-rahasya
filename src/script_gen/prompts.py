@@ -1,22 +1,24 @@
 """Prompt templates for script generation."""
 
+from src.script_gen.craft_rules import SCRIPT_CRAFT_RULES
+
 LEGAL_BLOCK = """
-CRITICAL: Original Hindi paraphrase only. No verbatim book quotes.
+CRITICAL: Original Hinglish paraphrase only. No verbatim book quotes.
 Do NOT explain, summarize, or recap the previous episode. No recap phrases.
 Each episode covers NEW events only — never repeat an earlier episode's plot.
-Cinematic dubbing tone. In medias res. Devanagari script for voiceover.
+Spoken Hinglish (Devanagari Hindi + common English words). In medias res with a stakes-first hook.
 """
 
 DUBBING_STYLE_BLOCK = """
-Write like a Hindi thriller dubbing track: named characters, specific scenes, emotional pauses (…).
-Build setup → tension → cliffhanger inside this episode only.
+Write like a tense thriller narrator: named characters, specific scenes, emotional pauses (…).
+Build hook → rising tension every 5–7s → cliffhanger inside this episode only.
 Use retention_strategy / retention_angle to keep viewers watching the next part.
 """
 
 SCRIPT_JSON_SCHEMA = """
 Return ONLY valid JSON with keys:
-voiceover_script, episode_only_script, hook, cliffhanger, caption_hook, caption_teaser,
-static_post_text, stock_keywords, on_screen_text
+voiceover_script, episode_only_script, english_voiceover, hook, cliffhanger, caption_hook,
+caption_teaser, static_post_text, stock_keywords, on_screen_text, english_on_screen
 """
 
 _MAX_SAMPLE_CHARS = 700
@@ -56,7 +58,7 @@ def build_script_prompt(
         sample_excerpt = _clip(sample_scripts[0], _MAX_SAMPLE_CHARS)
 
     if not min_chars or not max_chars:
-        min_chars = min_seconds * 11
+        min_chars = min_seconds * 10
         max_chars = max_seconds * 11
 
     plot_beat = _clip(plot_beat, _MAX_CONTEXT_CHARS)
@@ -85,7 +87,8 @@ def build_script_prompt(
         )
     elif episode_num == 1:
         continuity_block = (
-            "\nEPISODE 1: Hook in 3 seconds. Introduce hero + mystery. Strong cliffhanger.\n"
+            "\nEPISODE 1: Danger/shock/question in the first line. Introduce hero + mystery. "
+            "Strong cliffhanger. Frame as a famous world classic if this is a named classic novel.\n"
         )
 
     episode_brief = ""
@@ -98,7 +101,8 @@ def build_script_prompt(
         )
 
     return (
-        f"You write for Rahasya.exe — foreign thrillers Bollywood forgot.\n\n"
+        f"You write for Rahasya.exe — binge thriller reels from classic and original mysteries.\n\n"
+        f"{SCRIPT_CRAFT_RULES}\n\n"
         f"{LEGAL_BLOCK}\n"
         f"{DUBBING_STYLE_BLOCK}\n\n"
         f"STYLE REFERENCE (tone only):\n{sample_excerpt}\n\n"
@@ -107,7 +111,8 @@ def build_script_prompt(
         f"Plot beat (THIS episode only): {plot_beat}\n"
         f"Position in story (do not narrate as recap): {cumulative_synopsis}\n"
         f"{story_bible}{continuity_block}{episode_brief}\n"
-        f"HARD LIMITS: voiceover_script {min_chars}-{max_chars} Hindi chars "
+        f"HARD LIMITS: voiceover_script {min_chars}-{max_chars} Hinglish chars "
         f"({min_seconds}-{max_seconds}s spoken). episode_only_script = voiceover_script.\n"
+        f"english_voiceover = parallel English of the same beats (for bilingual subtitles).\n"
         f"{SCRIPT_JSON_SCHEMA}"
     )

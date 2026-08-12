@@ -25,10 +25,10 @@ class EdgeTTSVoiceover(VoiceoverBase):
         if config.edge_tts_voice:
             self.voice = config.edge_tts_voice
         elif config.voice_language.lower() in ("hindi", "hi"):
-            self.voice = self.HINDI_FEMALE
+            self.voice = self.HINDI_MALE
         else:
             self.voice = self.ENGLISH_VOICE
-        self.rate = getattr(config, "edge_tts_rate", "-8%") or "-8%"
+        self.rate = getattr(config, "edge_tts_rate", "-4%") or "-4%"
         self.pitch = getattr(config, "edge_tts_pitch", "-2Hz") or "-2Hz"
 
     def generate(self, text: str, output_path: Path) -> Path:

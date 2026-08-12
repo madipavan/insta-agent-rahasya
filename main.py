@@ -49,7 +49,7 @@ def cmd_run(args: argparse.Namespace) -> None:
             print(f"Now active: {novel.title} by {novel.author}")
         else:
             print("No active novel to skip — continuing with queue.")
-    bundle_id = pipeline.run()
+    bundle_id = pipeline.run(regen_script=bool(getattr(args, "regen_script", False)))
     if getattr(args, "publish_now", False):
         config.min_publish_delay_hours = 0
         published = pipeline.publish_pending()
@@ -418,6 +418,11 @@ def main() -> None:
         "--keep-output",
         action="store_true",
         help="With --next-novel: keep output folders for the skipped novel",
+    )
+    run_parser.add_argument(
+        "--regen-script",
+        action="store_true",
+        help="Ignore saved script_json and regenerate with the live writer",
     )
     run_parser.set_defaults(func=cmd_run)
     publish_parser = sub.add_parser(

@@ -59,3 +59,21 @@ def test_elevenlabs_runtime_missing_key_falls_back(tmp_path: Path) -> None:
 
     assert result == tmp_path / "out.mp3"
     edge_gen.assert_called_once()
+
+
+def test_edge_hindi_default_is_male_madhur(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    config.edge_tts_voice = ""
+    config.voice_language = "hindi"
+    logger = PipelineLogger(tmp_path / "logs")
+    edge = EdgeTTSVoiceover(config, logger)
+    assert edge.voice == EdgeTTSVoiceover.HINDI_MALE
+
+
+def test_config_defaults_male_voice_chain() -> None:
+    config = AppConfig()
+    assert config.voice_name == "Viraj"
+    assert config.voice_id == "P1bg08DkjqiVEzOn76yG"
+    assert config.edge_tts_voice == "hi-IN-MadhurNeural"
+    assert config.sarvam_speaker == "shubh"
+    assert config.fish_audio_fallback is False

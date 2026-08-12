@@ -94,11 +94,11 @@ class Pipeline:
             self._hashtags = HashtagFetcher(self.config, self.logger)
         return self._hashtags
 
-    def run(self) -> str:
+    def run(self, *, regen_script: bool = False) -> str:
         self.logger.start("pipeline", "daily run")
         try:
             context = self.queue.get_today_context()
-            script = self.script_gen.generate(context)
+            script = self.script_gen.generate(context, regen_script=regen_script)
             caption = self.script_gen.format_caption(context, script)
 
             work_dir = self.config.path("output_dir") / "work" / self.review.create_bundle_id(context)

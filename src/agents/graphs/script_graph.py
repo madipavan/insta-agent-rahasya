@@ -6,7 +6,7 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from src.agents.crews.batch_validate import validate_script_dict
+from src.agents.crews.batch_validate import normalize_script_dict, validate_script_dict
 from src.agents.crews.script_crew import ScriptCrew
 from src.book_queue.models import EpisodeContext, ScriptOutput
 from src.config import AppConfig
@@ -32,8 +32,21 @@ MAX_ATTEMPTS = 6
 MIN_SHORT_TOLERANCE = 30
 
 
-def _validate_script(data: dict[str, Any], min_chars: int, max_chars: int) -> str | None:
-    return validate_script_dict(data, min_chars, max_chars)
+def _validate_script(
+    data: dict[str, Any],
+    min_chars: int,
+    max_chars: int,
+    *,
+    style_tag: str = "",
+    brand_hashtag: str = "#RahasyaExe",
+) -> str | None:
+    return validate_script_dict(
+        data,
+        min_chars,
+        max_chars,
+        style_tag=style_tag,
+        brand_hashtag=brand_hashtag,
+    )
 
 class ScriptGraphRunner:
     def __init__(self, config: AppConfig, logger: PipelineLogger) -> None:
@@ -86,6 +99,11 @@ class ScriptGraphRunner:
         trimmed = trim_to_limit(body, max_chars)
         data["voiceover_script"] = trimmed
         data["episode_only_script"] = trimmed
+        data = normalize_script_dict(
+            data,
+            max_chars,
+            style_tag=getattr(self.config, "stock_style_tag", ""),
+        )
         return ScriptOutput.from_dict(data)
 
     def _build_graph(self):
@@ -116,7 +134,13 @@ class ScriptGraphRunner:
         return {**state, "script_data": data, "attempt": attempt, "error": ""}
 
     def _validate_node(self, state: ScriptState) -> ScriptState:
-        err = _validate_script(state["script_data"], state["min_chars"], state["max_chars"])
+        err = _validate_script(
+            state["script_data"],
+            state["min_chars"],
+            state["max_chars"],
+            style_tag=getattr(self.config, "stock_style_tag", ""),
+            brand_hashtag=getattr(self.config, "brand_hashtag", "#RahasyaExe"),
+        )
         return {**state, "error": err or ""}
 
     def _refine_node(self, state: ScriptState) -> ScriptState:

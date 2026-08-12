@@ -9,6 +9,7 @@ from pathlib import Path
 
 from src.book_queue.models import EpisodeContext, ScriptOutput
 from src.config import AppConfig
+from src.hashtags.brand import DEFAULT_BRAND_HASHTAG, normalize_brand_hashtag
 
 
 @dataclass
@@ -51,6 +52,7 @@ def build_post_details(
         tag_block = hashtags.strip()
     else:
         base_hashtags = config.hashtags.strip()
+        brand = getattr(config, "brand_hashtag", DEFAULT_BRAND_HASHTAG) or DEFAULT_BRAND_HASHTAG
         extra = " ".join(
             tag
             for tag in (
@@ -59,11 +61,14 @@ def build_post_details(
                 _slug_hashtag(author),
                 "#hindithriller",
                 "#suspensestory",
-                "#rahaysaexe",
+                brand,
             )
             if tag and tag.lower() not in base_hashtags.lower()
         )
         tag_block = f"{base_hashtags} {extra}".strip()
+
+    locked = getattr(config, "brand_hashtag", DEFAULT_BRAND_HASHTAG) or DEFAULT_BRAND_HASHTAG
+    tag_block, _ = normalize_brand_hashtag(tag_block, locked)
 
     reel_title = f'{novel} | Ep {ep}/{total} — {quote}'
     carousel_title = f'{novel} — Part {ep} ({static_slide_count} slides)'
@@ -71,16 +76,17 @@ def build_post_details(
     reel_caption = caption
     if tag_block and tag_block not in caption:
         reel_caption = f"{caption.rstrip()}\n\n{tag_block}"
+    reel_caption, _ = normalize_brand_hashtag(reel_caption, locked)
 
     carousel_caption = (
         f"{script.caption_hook}\n\n"
         f"{script.caption_teaser}\n\n"
-        f"📖 Swipe through {static_slide_count} slides — full story in Hindi.\n\n"
+        f"📖 Swipe through {static_slide_count} slides — full story in Hindi + English.\n\n"
         f'Part {ep}/{total} of "{novel}"\n'
         f"{config.cta}\n\n"
         f"{tag_block}"
     ) if static_slide_count > 1 else reel_caption
-
+    carousel_caption, _ = normalize_brand_hashtag(carousel_caption, locked)
     return PostDetails(
         novel_title=novel,
         author=author,

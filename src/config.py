@@ -67,14 +67,14 @@ class VideoConfig:
     stock_providers: list[str] = field(
         default_factory=lambda: ["local", "pixabay", "pexels"]
     )
-    bgm_volume: float = 0.24
+    bgm_volume: float = 0.19
     voiceover_volume: float = 1.2
     instagram_max_sec: int = 90
     instagram_max_upload_mb: int = 12
     sfx_enabled: bool = True
-    sfx_hook_volume: float = 0.28
-    sfx_whoosh_volume: float = 0.18
-    sfx_cliffhanger_volume: float = 0.24
+    sfx_hook_volume: float = 0.21
+    sfx_whoosh_volume: float = 0.14
+    sfx_cliffhanger_volume: float = 0.18
     sfx_cliffhanger_before_end_sec: float = 8.0
     # Per-novel ElevenLabs music + SFX (generate once, reuse all episodes)
     elevenlabs_audio_enabled: bool = True

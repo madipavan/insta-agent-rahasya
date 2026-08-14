@@ -128,13 +128,13 @@ video:
     - local
     - pixabay
     - pexels
-  bgm_volume: 0.27
+  bgm_volume: 0.24
   voiceover_volume: 1.2
   # Retention SFX mixed under voiceover (hook, cut whooshes, cliffhanger sting)
   sfx_enabled: true
-  sfx_hook_volume: 0.35
-  sfx_whoosh_volume: 0.22
-  sfx_cliffhanger_volume: 0.30
+  sfx_hook_volume: 0.28
+  sfx_whoosh_volume: 0.18
+  sfx_cliffhanger_volume: 0.24
   sfx_cliffhanger_before_end_sec: 8.0
   # Generate per-novel ElevenLabs music + SFX once; reuse for all episodes
   elevenlabs_audio_enabled: true

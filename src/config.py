@@ -67,11 +67,11 @@ class VideoConfig:
     stock_providers: list[str] = field(
         default_factory=lambda: ["local", "pixabay", "pexels"]
     )
-    bgm_volume: float = 0.17
+    bgm_volume: float = 0.15
     voiceover_volume: float = 1.2
     instagram_max_sec: int = 90
     instagram_max_upload_mb: int = 12
-    sfx_enabled: bool = True
+    sfx_enabled: bool = False
     sfx_hook_volume: float = 0.12
     sfx_whoosh_volume: float = 0.11
     sfx_cliffhanger_volume: float = 0.14

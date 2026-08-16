@@ -81,6 +81,27 @@ class VideoConfig:
 
 
 @dataclass
+class ReplicateArtConfig:
+    """Fictional stills via Replicate. Stock video/photos are fallback."""
+
+    enabled: bool = True
+    model: str = "black-forest-labs/flux-dev"
+    aspect_ratio: str = "9:16"
+    style_tag: str = (
+        "stylized cinematic illustration, teal-blue noir grade, "
+        "dramatic shadows, fictional thriller book-art"
+    )
+    negative_avoid: str = (
+        "photorealistic, real photo, stock photo, documentary, real person, "
+        "celebrity, watermark, text, logo, blurry, low quality"
+    )
+    # Full-reel stills: skip stock video when Replicate succeeds
+    reel_still_count: int = 6
+    prefer_stills_only: bool = True
+    static_use_replicate: bool = True
+
+
+@dataclass
 class PathsConfig:
     data_dir: str = "data"
     db_path: str = "data/rahasya.db"
@@ -146,7 +167,10 @@ class AppConfig:
     cta: str = "Follow for the next part 👀"
     hashtags: str = "#thrillerbooks #suspensenovel #bookstagram #RahasyaExe #booktok"
     brand_hashtag: str = "#RahasyaExe"
-    stock_style_tag: str = "noir lighting, teal-blue color grade, cinematic"
+    stock_style_tag: str = (
+        "stylized cinematic illustration, teal-blue noir grade, "
+        "dramatic shadows, fictional thriller book-art"
+    )
     review_required: bool = True
     auto_publish: bool = False
     min_publish_delay_hours: int = 20
@@ -155,6 +179,7 @@ class AppConfig:
     discovery: DiscoveryConfig = field(default_factory=DiscoveryConfig)
     static_post: StaticPostConfig = field(default_factory=StaticPostConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
+    replicate_art: ReplicateArtConfig = field(default_factory=ReplicateArtConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
 
     anthropic_api_key: str = ""
@@ -166,6 +191,7 @@ class AppConfig:
     elevenlabs_api_key: str = ""
     fish_audio_api_key: str = ""
     sarvam_api_key: str = ""
+    replicate_api_token: str = ""
     pexels_api_key: str = ""
     pixabay_api_key: str = ""
     metricool_api_key: str = ""
@@ -259,7 +285,8 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         brand_hashtag=raw.get("brand_hashtag", "#RahasyaExe"),
         stock_style_tag=raw.get(
             "stock_style_tag",
-            "noir lighting, teal-blue color grade, cinematic",
+            "stylized cinematic illustration, teal-blue noir grade, "
+            "dramatic shadows, fictional thriller book-art",
         ),
         review_required=raw.get("review_required", True),
         auto_publish=raw.get("auto_publish", False),
@@ -269,6 +296,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         discovery=_merge_dataclass(DiscoveryConfig, raw.get("discovery", {})),
         static_post=_merge_dataclass(StaticPostConfig, raw.get("static_post", {})),
         video=_merge_dataclass(VideoConfig, raw.get("video", {})),
+        replicate_art=_merge_dataclass(ReplicateArtConfig, raw.get("replicate_art", {})),
         paths=_merge_dataclass(PathsConfig, raw.get("paths", {})),
     )
 
@@ -281,6 +309,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
     config.elevenlabs_api_key = os.getenv("ELEVENLABS_API_KEY", "")
     config.fish_audio_api_key = os.getenv("FISH_AUDIO_API_KEY", "")
     config.sarvam_api_key = os.getenv("SARVAM_API_KEY", "")
+    config.replicate_api_token = os.getenv("REPLICATE_API_TOKEN", "").strip()
     config.pexels_api_key = os.getenv("PEXELS_API_KEY", "")
     config.pixabay_api_key = os.getenv("PIXABAY_API_KEY", "")
     config.metricool_api_key = os.getenv("METRICOOL_API_KEY", "")

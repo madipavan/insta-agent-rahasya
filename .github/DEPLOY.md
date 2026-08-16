@@ -24,8 +24,9 @@ GitHub → your repo → **Settings** → **Secrets and variables** → **Action
 | `GROQ_API_KEY` or `GEMINI_API_KEY` | Yes (one LLM) | Script generation |
 | `FISH_AUDIO_API_KEY` | Yes (voice) | Primary Hindi TTS (fish-audio) |
 | `SARVAM_API_KEY` | Optional | Voice fallback if Fish fails |
-| `PEXELS_API_KEY` | Yes (stock) | Stock footage |
+| `PEXELS_API_KEY` | Yes (stock video) | Stock footage fallback |
 | `PIXABAY_API_KEY` | Optional | Extra stock source |
+| `REPLICATE_API_TOKEN` | Recommended (stills) | Fictional novel art via FLUX Schnell |
 | `META_ACCESS_TOKEN` | For auto-post | Instagram scheduling |
 | `META_IG_USER_ID` | For auto-post | Instagram account ID |
 | `META_PAGE_ID` | For auto-post | Facebook Page (cover upload) |

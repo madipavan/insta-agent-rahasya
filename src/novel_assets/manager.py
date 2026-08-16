@@ -196,7 +196,10 @@ class NovelAssetManager:
 
         thumb_keywords = self._thumbnail_keywords(novel, keywords)
         photo = self.stock.fetch_photo(
-            thumb_keywords, self.config.video.width, self.config.video.height
+            thumb_keywords,
+            self.config.video.width,
+            self.config.video.height,
+            novel_title=novel.title,
         )
 
         if photo:

@@ -76,7 +76,7 @@ edge_tts_pitch: "-2Hz"
 cta: "Follow for the next part 👀"
 brand_hashtag: "#RahasyaExe"
 hashtags: "#thrillerbooks #suspensenovel #bookstagram #RahasyaExe #booktok"
-stock_style_tag: "noir lighting, teal-blue color grade, cinematic"
+stock_style_tag: "stylized cinematic illustration, teal-blue noir grade, dramatic shadows, fictional thriller book-art"
 review_required: false
 # false = generate now, publish later via `python main.py publish` (or publish workflow at post_time)
 auto_publish: false
@@ -140,6 +140,18 @@ video:
   elevenlabs_audio_enabled: true
   elevenlabs_music_length_ms: 30000
   elevenlabs_music_model: music_v1
+
+# Fictional stills via Replicate (try free → then prepaid). Stock photos = fallback.
+replicate_art:
+  enabled: true
+  # flux-schnell needs paid credit; flux-dev is on Replicate Try-for-Free (non-commercial — switch to schnell after billing)
+  model: "black-forest-labs/flux-dev"
+  aspect_ratio: "9:16"
+  style_tag: "stylized cinematic illustration, teal-blue noir grade, dramatic shadows, fictional thriller book-art"
+  negative_avoid: "photorealistic, real photo, stock photo, documentary, real person, celebrity, watermark, text, logo, blurry, low quality"
+  reel_still_count: 6
+  prefer_stills_only: true
+  static_use_replicate: true
 
 # Top-level mirrors used by AppConfig loaders
 elevenlabs_music_length_ms: 30000

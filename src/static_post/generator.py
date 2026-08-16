@@ -35,10 +35,15 @@ class StaticPostGenerator:
         self.logger.start("static_post", f"{len(slides)} carousel slides")
 
         paths: list[Path] = []
+        still_pool = list(stock_paths or [])
         for i, slide_text in enumerate(slides):
             stock_hint = (stock_paths[i % len(stock_paths)] if stock_paths else None)
             background = self._resolve_background(
-                stock_hint, script.stock_keywords, i, len(slides)
+                stock_hint,
+                script.stock_keywords,
+                i,
+                len(slides),
+                still_pool=still_pool,
             )
             img = self.brand.create_cinematic_quote_card(
                 slide_text,
@@ -107,7 +112,32 @@ class StaticPostGenerator:
         keywords: list[str],
         slide_index: int,
         total_slides: int,
+        *,
+        still_pool: list[Path] | None = None,
     ) -> Image.Image | None:
+        art_cfg = getattr(self.config, "replicate_art", None)
+        static_use_rep = bool(getattr(art_cfg, "static_use_replicate", True))
+
+        # Prefer cycling through reel Replicate stills (no extra API cost)
+        pool = still_pool or []
+        image_pool = [
+            p
+            for p in pool
+            if p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") and p.exists()
+        ]
+        if image_pool:
+            chosen = image_pool[slide_index % len(image_pool)]
+            return Image.open(chosen).convert("RGB")
+
+        if static_use_rep:
+            photo = self.stock.fetch_photo(
+                keywords + ["cinematic", "artistic", f"scene{slide_index + 1}"],
+                self.config.static_post.width,
+                self.config.static_post.height,
+            )
+            if photo:
+                return photo
+
         if stock_path and stock_path.suffix.lower() in (".mp4", ".mov", ".webm"):
             at_sec = 1.0 + (slide_index * 2.5)
             frame = self.stock.extract_video_frame(stock_path, at_sec=at_sec)
@@ -117,9 +147,8 @@ class StaticPostGenerator:
         if stock_path and stock_path.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
             return Image.open(stock_path).convert("RGB")
 
-        photo = self.stock.fetch_photo(
+        return self.stock.fetch_photo(
             keywords + ["cinematic", "artistic", f"scene{slide_index + 1}"],
             self.config.static_post.width,
             self.config.static_post.height,
         )
-        return photo

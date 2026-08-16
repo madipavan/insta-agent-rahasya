@@ -1,4 +1,4 @@
-"""Hybrid stock footage resolver — local library, Pixabay, and Pexels."""
+"""Hybrid stock footage resolver — Replicate fiction stills, local library, Pixabay, Pexels."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from PIL import Image
 from src.config import AppConfig
 from src.pipeline.logger import PipelineLogger
 from src.utils.ffmpeg_path import get_ffmpeg_exe
+from src.visuals.replicate_art import ReplicateArtClient
 
 
 class StockResolver:
@@ -30,12 +31,28 @@ class StockResolver:
         self.library_path = config.path("stock_library")
         self.cache_path = config.path("output_dir") / "stock_cache"
         self.cache_path.mkdir(parents=True, exist_ok=True)
+        self.replicate = ReplicateArtClient(config, logger, self.cache_path)
 
     def resolve_visuals(self, keywords: list[str], output_dir: Path) -> list[Path]:
-        """Return multiple clips and photos for montage editing."""
+        """Return montage assets — Replicate stills-only when configured, else hybrid stock."""
         clean_kw = [k for k in keywords if isinstance(k, str) and k.lower() not in ("esmodule", "module")]
         if not clean_kw:
             clean_kw = ["mystery", "thriller", "cinematic"]
+
+        art_cfg = getattr(self.config, "replicate_art", None)
+        prefer_stills = bool(getattr(art_cfg, "prefer_stills_only", True))
+        still_count = int(getattr(art_cfg, "reel_still_count", 6) or 6)
+
+        if prefer_stills and self.replicate.available:
+            self.logger.start(
+                "stock",
+                f"{', '.join(clean_kw[:4])} | replicate stills-only ×{still_count}",
+            )
+            stills = self._generate_replicate_stills(clean_kw, still_count)
+            if stills:
+                self.logger.ok("stock", f"{len(stills)} Replicate stills (full reel)")
+                return stills
+            self.logger.warn("stock", "Replicate stills-only failed — falling back to hybrid stock")
 
         video_count = self.config.video.clip_count
         photo_count = self.config.video.photo_count
@@ -73,12 +90,23 @@ class StockResolver:
 
         photos: list[Path] = []
         if photo_count > 0:
-            for query in self._build_queries(clean_kw, artistic=True):
-                photo = self._fetch_remote_photo(query, providers)
-                if photo and photo not in photos:
-                    photos.append(photo)
-                if len(photos) >= photo_count:
+            while len(photos) < photo_count and self.replicate.available:
+                art = self.replicate.generate_photo(
+                    clean_kw + [f"scene{len(photos) + 1}"],
+                    width=self.config.video.width,
+                    height=self.config.video.height,
+                )
+                if not art or art in photos:
                     break
+                photos.append(art)
+
+            if len(photos) < photo_count:
+                for query in self._build_queries(clean_kw, artistic=True):
+                    photo = self._fetch_remote_photo(query, providers)
+                    if photo and photo not in photos:
+                        photos.append(photo)
+                    if len(photos) >= photo_count:
+                        break
 
         if not visuals and not photos:
             placeholder = self._create_placeholder(output_dir)
@@ -88,6 +116,43 @@ class StockResolver:
         montage = self._interleave(visuals[:video_count], photos[:photo_count])
         self.logger.ok("stock", f"{len(montage)} clips ({len(visuals)} video, {len(photos)} photo)")
         return montage
+
+    def _generate_replicate_stills(self, keywords: list[str], count: int) -> list[Path]:
+        """Generate unique fictional stills for a full-reel Ken Burns montage."""
+        import time
+
+        if count <= 0 or not self.replicate.available:
+            return []
+        stills: list[Path] = []
+        for i in range(count):
+            # Put salts first so they are never truncated from the T2I prompt
+            salted = [f"scene{i + 1}", f"beat{i + 1}"] + list(keywords)
+            art = self.replicate.generate_photo(
+                salted,
+                width=self.config.video.width,
+                height=self.config.video.height,
+            )
+            if art and art not in stills:
+                stills.append(art)
+            elif not art:
+                # Wait for free-tier rate limit, then one retry
+                time.sleep(12)
+                art = self.replicate.generate_photo(
+                    [f"scene{i + 1}", f"variant{i + 1}", f"shot{i + 1}"] + list(keywords),
+                    width=self.config.video.width,
+                    height=self.config.video.height,
+                )
+                if art and art not in stills:
+                    stills.append(art)
+                else:
+                    break
+            # Pace free-tier: ~6/min with burst 1
+            if i + 1 < count:
+                time.sleep(11)
+        min_ok = max(2, (count + 1) // 2)
+        if len(stills) < min_ok:
+            return []
+        return stills
 
     def resolve(self, keywords: list[str], output_dir: Path) -> Path:
         """Single-clip fallback for static post frame extraction."""
@@ -345,7 +410,23 @@ class StockResolver:
         img.save(path)
         return path
 
-    def fetch_photo(self, keywords: list[str], width: int, height: int) -> Image.Image | None:
+    def fetch_photo(
+        self,
+        keywords: list[str],
+        width: int,
+        height: int,
+        *,
+        novel_title: str | None = None,
+    ) -> Image.Image | None:
+        art_path = self.replicate.generate_photo(
+            keywords,
+            width=width,
+            height=height,
+            novel_title=novel_title,
+        )
+        if art_path:
+            return Image.open(art_path).convert("RGB")
+
         providers = [p.lower() for p in self.config.video.stock_providers]
         query = " ".join(keywords[:3]) + " dark cinematic artistic"
         path = self._fetch_remote_photo(query, providers)

@@ -31,8 +31,11 @@ CAPTION
 - Brand hashtag spelling is exactly #RahasyaExe (never rahaysaexe / rahasyaexe typos).
 
 STOCK / VISUALS
-- stock_keywords = actual setting + actual visual subject + style tag.
-  NEVER mood-only (cinematic / dark / mystery alone).
+- stock_keywords = fictional setting + fictional visual subject from THIS novel's episode + art style.
+  Prefer story props/locations as illustrated fiction (foggy marsh, sealed letter, shadowed staircase)
+  over real-city tourism or "real police station photo" framing.
+- Keywords describe a fictional illustrated scene for AI art — NEVER a request for a real photograph.
+- NEVER mood-only (cinematic / dark / mystery alone).
 - on_screen_text is the hook, not a theme label.
 
 BILINGUAL FIELDS

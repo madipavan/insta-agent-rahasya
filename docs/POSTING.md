@@ -32,6 +32,7 @@ Triggered twice daily by **cron-job.org** — each run does **generate + publish
 
 - `FISH_AUDIO_API_KEY` — primary voice
 - `GEMINI_API_KEY` — scripts
-- `PIXABAY_API_KEY` — stock (optional; Pexels fallback)
-- `PEXELS_API_KEY` — stock fallback
+- `REPLICATE_API_TOKEN` — fictional stills (try free → billing)
+- `PIXABAY_API_KEY` — stock video (optional; Pexels fallback)
+- `PEXELS_API_KEY` — stock video fallback
 - `SARVAM_API_KEY` — voice backup only when Fish fails

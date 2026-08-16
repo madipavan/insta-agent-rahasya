@@ -43,6 +43,7 @@ Edit `.env` with your API keys and `config.yaml` with your ElevenLabs `voice_id`
 |-----|---------|
 | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | Script generation |
 | `ELEVENLABS_API_KEY` | Voiceover |
+| `REPLICATE_API_TOKEN` | Fictional stills (try free → billing) |
 | `PEXELS_API_KEY` | Stock footage fallback |
 | `METRICOOL_API_KEY` + `METRICOOL_USER_ID` | Scheduling |
 | `TMDB_API_KEY` | Adaptation checks |

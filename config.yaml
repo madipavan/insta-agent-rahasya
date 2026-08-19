@@ -17,7 +17,7 @@ brand:
   intro_duration_sec: 1.0
   outro_duration_sec: 1.0
 
-llm_provider: gemini
+llm_provider: openai
 llm_fallback_providers:
   - groq
   - mistral
@@ -75,9 +75,11 @@ edge_tts_pitch: "-2Hz"
 
 cta: "Follow for the next part 👀"
 brand_hashtag: "#RahasyaExe"
-hashtags: "#thrillerbooks #suspensenovel #bookstagram #RahasyaExe #booktok"
-stock_style_tag: "stylized cinematic illustration, teal-blue noir grade, dramatic shadows, fictional thriller book-art"
-review_required: false
+hashtags: "#darkstory #hindikahani #crimethriller #thriller #RahasyaExe #storytime"
+stock_style_tag: "Indian 2D digital illustration, visual novel webtoon style, clean outlines, smooth cel shading, warm cinematic lighting, modern Indian characters"
+content_mode: indian_dark_serial
+image_provider: openai
+review_required: true
 # false = generate now, publish later via `python main.py publish` (or publish workflow at post_time)
 auto_publish: false
 min_publish_delay_hours: 20
@@ -94,12 +96,13 @@ caption_template: |
 
   {caption_teaser}
 
-  Part {episode}/{total} of "{novel_title}"
+  Episode {episode}/{total} — {novel_title}
   {cta}
 
   {hashtags}
 
 static_post:
+  enabled: false
   width: 1080
   height: 1350
   layout_rotation: quote
@@ -141,17 +144,26 @@ video:
   elevenlabs_music_length_ms: 30000
   elevenlabs_music_model: music_v1
 
-# Fictional stills via Replicate (try free → then prepaid). Stock photos = fallback.
+# Legacy Replicate path (disabled — use OpenAI panels)
 replicate_art:
-  enabled: true
-  # flux-schnell needs paid credit; flux-dev is on Replicate Try-for-Free (non-commercial — switch to schnell after billing)
+  enabled: false
   model: "black-forest-labs/flux-dev"
   aspect_ratio: "9:16"
-  style_tag: "stylized cinematic illustration, teal-blue noir grade, dramatic shadows, fictional thriller book-art"
+  style_tag: "Indian 2D digital illustration, visual novel webtoon style"
   negative_avoid: "photorealistic, real photo, stock photo, documentary, real person, celebrity, watermark, text, logo, blurry, low quality"
   reel_still_count: 6
   prefer_stills_only: true
-  static_use_replicate: true
+  static_use_replicate: false
+
+# Indian comic panels — OpenAI gpt-image with speech bubbles in prompt
+openai_art:
+  enabled: true
+  model: gpt-image-1
+  size: "1024x1536"
+  quality: low
+  panel_count: 10
+  max_retries: 2
+  style_tag: "Indian 2D digital illustration, visual novel webtoon style, clean outlines, smooth cel shading, warm cinematic lighting, modern Indian characters"
 
 # Top-level mirrors used by AppConfig loaders
 elevenlabs_music_length_ms: 30000
@@ -167,4 +179,5 @@ paths:
   voiceover_cache_dir: output/voiceover_cache
   sample_scripts: data/sample_scripts
   novels_seed: data/novels_seed.json
+  stories_seed: data/stories_seed.json
   novels_pdf_dir: data/novels

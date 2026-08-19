@@ -39,16 +39,23 @@ class EpisodePlanner:
 
         self.logger.start(
             "episode_planner",
-            f"{novel.title} — {episode_count} episodes (pdf→batch scripts)",
+            f"{novel.title} — {episode_count} episodes "
+            f"({'original serial arc' if self._is_original_serial(novel) else 'pdf→batch scripts'})",
         )
 
-        package = self._build_from_pdf(novel, episode_count, ranges)
-        if package is None:
-            self.logger.warn(
-                "episode_planner",
-                "PDF batch path failed — falling back to title/author arc (no scripts)",
-            )
-            package = self._generate_master_arc(novel, episode_count, ranges)
+        if self._is_original_serial(novel):
+            if novel.story_summary and novel.novel_logline:
+                package = self._outline_from_seed_bible(novel, episode_count, ranges)
+            else:
+                package = self._generate_master_arc(novel, episode_count, ranges)
+        else:
+            package = self._build_from_pdf(novel, episode_count, ranges)
+            if package is None:
+                self.logger.warn(
+                    "episode_planner",
+                    "PDF batch path failed — falling back to title/author arc (no scripts)",
+                )
+                package = self._generate_master_arc(novel, episode_count, ranges)
 
         episodes_data = package.get("episodes", [])
         self.db.set_novel_story_bible(
@@ -96,6 +103,41 @@ class EpisodePlanner:
             "episode_planner",
             f"created {episode_count} episodes ({saved} with saved scripts)",
         )
+
+    def _is_original_serial(self, novel: Novel) -> bool:
+        if getattr(self.config, "content_mode", "") != "indian_dark_serial":
+            return False
+        return novel.author == "Rahasya Original" or not novel.public_domain
+
+    def _outline_from_seed_bible(
+        self,
+        novel: Novel,
+        episode_count: int,
+        ranges: list[tuple[int, int]],
+    ) -> dict:
+        """Fast outline from stories_seed.json bible — scripts generated per episode at runtime."""
+        self.logger.info("episode_planner | using seed story bible (skip LLM arc)")
+        episodes: list[dict] = []
+        for i, (start, end) in enumerate(ranges, start=1):
+            episodes.append(
+                {
+                    "episode_num": i,
+                    "plot_beat_summary": (
+                        f"Episode {i}/{episode_count}: {novel.title} — "
+                        f"beat {start}-{end}, Indian dark serial retention arc."
+                    ),
+                    "cumulative_synopsis": novel.story_summary[:500],
+                    "planned_hook": novel.novel_logline if i == 1 else "",
+                    "planned_cliffhanger": "Cliffhanger — agla episode dekho.",
+                    "retention_angle": novel.retention_strategy or "",
+                }
+            )
+        return {
+            "novel_logline": novel.novel_logline,
+            "story_summary": novel.story_summary,
+            "retention_strategy": novel.retention_strategy,
+            "episodes": episodes,
+        }
 
     def _build_from_pdf(
         self,

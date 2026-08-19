@@ -6,6 +6,16 @@ from dataclasses import dataclass, field
 
 
 @dataclass
+class StoryPanel:
+    dialogue: str
+    scene: str
+    speaker: str = ""
+    characters: list[str] = field(default_factory=list)
+    bubble: str = "speech"
+    action: str = ""
+
+
+@dataclass
 class Novel:
     id: int
     title: str
@@ -61,6 +71,41 @@ class ScriptOutput:
     episode_only_script: str = ""
     english_voiceover: str = ""
     english_on_screen: list[str] = field(default_factory=list)
+    panels: list[StoryPanel] = field(default_factory=list)
+
+    @staticmethod
+    def _coerce_panels(value: object) -> list[StoryPanel]:
+        if not value:
+            return []
+        if not isinstance(value, (list, tuple)):
+            return []
+        out: list[StoryPanel] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+            dialogue = ScriptOutput._coerce_text(item.get("dialogue", ""))
+            scene = ScriptOutput._coerce_text(item.get("scene", ""))
+            if not dialogue or not scene:
+                continue
+            chars_raw = item.get("characters", [])
+            characters: list[str] = []
+            if isinstance(chars_raw, str) and chars_raw.strip():
+                characters = [chars_raw.strip()]
+            elif isinstance(chars_raw, (list, tuple)):
+                characters = [
+                    ScriptOutput._coerce_text(c) for c in chars_raw if ScriptOutput._coerce_text(c)
+                ]
+            out.append(
+                StoryPanel(
+                    dialogue=dialogue,
+                    scene=scene,
+                    speaker=ScriptOutput._coerce_text(item.get("speaker", "")),
+                    characters=characters,
+                    bubble=ScriptOutput._coerce_text(item.get("bubble", "speech")) or "speech",
+                    action=ScriptOutput._coerce_text(item.get("action", "")),
+                )
+            )
+        return out
 
     @staticmethod
     def _coerce_text(value: object) -> str:
@@ -158,6 +203,7 @@ class ScriptOutput:
             episode_only_script=body,
             english_voiceover=cls._coerce_text(data.get("english_voiceover", "")),
             english_on_screen=cls._coerce_text_list(data.get("english_on_screen", [])),
+            panels=cls._coerce_panels(data.get("panels", [])),
         )
 
     def episode_script(self) -> str:

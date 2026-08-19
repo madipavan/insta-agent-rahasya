@@ -1,6 +1,7 @@
 """Tests for Meta publish rate-limit handling and partial success."""
 
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 from zoneinfo import ZoneInfo
 
@@ -182,3 +183,78 @@ def test_media_publish_with_retry_raises_after_exhausted_retries(mock_post, mock
         meta._media_publish_with_retry(rate_limited, "container_1")
 
     assert mock_sleep.call_count == meta.RATE_LIMIT_RETRY_ATTEMPTS - 1
+
+
+@patch("src.scheduler.meta.MetaScheduler._host_reel_via_github_contents")
+@patch("src.scheduler.meta.MetaScheduler._host_reel_via_catbox")
+def test_host_reel_publicly_skips_github_raw(mock_catbox, mock_github, tmp_path, monkeypatch):
+    monkeypatch.delenv("META_REEL_SKIP_PUBLIC_HOST", raising=False)
+    monkeypatch.delenv("CATBOX_USERHASH", raising=False)
+    meta = _scheduler()
+    video = tmp_path / "reel.mp4"
+    video.write_bytes(b"fake-mp4")
+    mock_catbox.return_value = "https://files.catbox.moe/abc.mp4"
+
+    url = meta._host_reel_publicly(video)
+
+    assert url == "https://files.catbox.moe/abc.mp4"
+    mock_github.assert_not_called()
+    mock_catbox.assert_called_once_with(video, userhash=None)
+
+
+@patch("src.scheduler.meta.time.sleep")
+@patch("src.scheduler.meta.requests.get")
+def test_wait_reel_container_processed_raises_on_2207076(mock_get, _sleep):
+    meta = _scheduler()
+    resp = MagicMock(spec=requests.Response)
+    resp.status_code = 200
+    resp.json.return_value = {
+        "status_code": "ERROR",
+        "status": "Error: Media upload has failed with error code 2207076",
+    }
+    mock_get.return_value = resp
+
+    with pytest.raises(RuntimeError, match="2207076"):
+        meta._wait_reel_container_processed("18088263353242256")
+
+
+@patch("src.scheduler.meta.MetaScheduler._validate_reel_for_upload")
+@patch("src.scheduler.meta.MetaScheduler._host_reel_publicly")
+@patch("src.scheduler.meta.MetaScheduler._create_reel_container_via_video_url")
+@patch("src.scheduler.meta.MetaScheduler._create_reel_container_via_rupload")
+@patch("src.scheduler.meta.MetaScheduler._wait_reel_container_processed")
+def test_create_reel_container_falls_back_to_rupload_on_2207076(
+    mock_wait, mock_rupload, mock_video_url, mock_host, _validate
+):
+    meta = _scheduler()
+    mock_host.return_value = "https://files.catbox.moe/x.mp4"
+    mock_video_url.return_value = "container_github_blocked"
+    mock_wait.side_effect = RuntimeError(
+        "Container container_github_blocked failed: "
+        "Error: Media upload has failed with error code 2207076"
+    )
+    mock_rupload.return_value = "container_rupload_ok"
+
+    result = meta._create_reel_container(Path("reel.mp4"), "caption")
+
+    assert result == "container_rupload_ok"
+    mock_rupload.assert_called_once()
+
+
+@patch("src.scheduler.meta.MetaScheduler._validate_reel_for_upload")
+@patch("src.scheduler.meta.MetaScheduler._host_reel_publicly")
+@patch("src.scheduler.meta.MetaScheduler._create_reel_container_via_video_url")
+@patch("src.scheduler.meta.MetaScheduler._create_reel_container_via_rupload")
+@patch("src.scheduler.meta.MetaScheduler._wait_reel_container_processed")
+def test_create_reel_container_uses_video_url_when_finished(
+    mock_wait, mock_rupload, mock_video_url, mock_host, _validate
+):
+    meta = _scheduler()
+    mock_host.return_value = "https://files.catbox.moe/x.mp4"
+    mock_video_url.return_value = "container_ok"
+    mock_wait.return_value = {"status_code": "FINISHED"}
+
+    result = meta._create_reel_container(Path("reel.mp4"), "caption")
+
+    assert result == "container_ok"
+    mock_rupload.assert_not_called()

@@ -43,6 +43,15 @@ class NovelDiscovery:
         self.logger = logger
 
     def run(self) -> int:
+        if getattr(self.config, "content_mode", "") == "indian_dark_serial":
+            archived = self.db.archive_non_serial_novels()
+            if archived:
+                self.logger.info(f"discovery | archived {archived} legacy novel(s)")
+            seed_path = self.config.path("stories_seed")
+            added = self.db.import_seed_file(seed_path)
+            self.logger.ok("discovery", f"added {added} Indian serial(s) from stories seed")
+            return added
+
         self.logger.start("discovery", "scanning public domain sources")
         candidates = self._fetch_gutenberg_candidates()
         if not candidates:

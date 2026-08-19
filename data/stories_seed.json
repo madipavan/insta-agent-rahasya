@@ -1,0 +1,40 @@
+{
+  "novels": [
+    {
+      "title": "Gaon Wapas",
+      "author": "Rahasya Original",
+      "country": "India",
+      "chapter_count": 10,
+      "public_domain": false,
+      "source_link": "",
+      "adaptation_checked": true,
+      "novel_logline": "City girl Tanvi returns to her village — old secrets, new betrayals, and a family that is not what it seems.",
+      "story_summary": "Tanvi (24, black tee, denim shorts, long black hair, crossbody bag) returns from Delhi to her UP village. Parents: father in cream shirt, mother in green saree. Ex Karan still lives nearby. Kirana owner spreads gossip. Hidden affair, pregnancy rumor, blackmail phone calls. Crime-thriller tone, Instagram-safe suggestive dialogue only.",
+      "retention_strategy": "Hook with shock → village gossip → secret messages → who is lying → cliffhanger every episode. Same 4 characters every panel."
+    },
+    {
+      "title": "Doosri Call",
+      "author": "Rahasya Original",
+      "country": "India",
+      "chapter_count": 10,
+      "public_domain": false,
+      "source_link": "",
+      "adaptation_checked": true,
+      "novel_logline": "Priya finds a second phone in her husband's drawer — every missed call hides another woman.",
+      "story_summary": "Priya and Rohan, Delhi middle-class couple. Priya discovers secret chats. Sister-in-law may be involved. Blackmail photos. Police complaint setup. Affair as plot engine, no explicit scenes.",
+      "retention_strategy": "Phone discovery → confrontation → fake alibi → witness → cliffhanger arrest or exposure."
+    },
+    {
+      "title": "Kiraye Wala",
+      "author": "Rahasya Original",
+      "country": "India",
+      "chapter_count": 10,
+      "public_domain": false,
+      "source_link": "",
+      "adaptation_checked": true,
+      "novel_logline": "A new tenant moves in — the landlord's wife starts getting messages she cannot explain.",
+      "story_summary": "Lucknow old haveli converted to flats. Tenant Arjun, landlord couple Mr and Mrs Sharma. Missing money, late-night footsteps, affair rumors, murder setup.",
+      "retention_strategy": "New tenant charm → missing cash → secret meetings → who entered the flat → cliffhanger."
+    }
+  ]
+}

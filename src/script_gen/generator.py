@@ -87,7 +87,9 @@ class ScriptGenerator:
         scripts_dir = self.config.path("sample_scripts")
         if not scripts_dir.exists():
             return []
-        preferred = scripts_dir / "example_00_hook_hinglish.txt"
+        preferred = scripts_dir / "example_indian_dark_ep1.txt"
+        if not preferred.exists():
+            preferred = scripts_dir / "example_00_hook_hinglish.txt"
         paths = sorted(scripts_dir.glob("*.txt"))
         if preferred.exists():
             paths = [preferred] + [p for p in paths if p != preferred]
@@ -102,7 +104,7 @@ class ScriptGenerator:
 
         template = self.config.caption_template or (
             "{caption_hook}\n\n{caption_teaser}\n\n"
-            "Part {episode}/{total} of \"{novel_title}\"\n{cta}\n\n{hashtags}"
+            "Episode {episode}/{total} — {novel_title}\n{cta}\n\n{hashtags}"
         )
         locked = getattr(self.config, "brand_hashtag", DEFAULT_BRAND_HASHTAG) or DEFAULT_BRAND_HASHTAG
         hashtags, _ = normalize_brand_hashtag(self.config.hashtags, locked)

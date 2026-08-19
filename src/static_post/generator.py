@@ -36,25 +36,39 @@ class StaticPostGenerator:
 
         paths: list[Path] = []
         still_pool = list(stock_paths or [])
-        for i, slide_text in enumerate(slides):
-            stock_hint = (stock_paths[i % len(stock_paths)] if stock_paths else None)
-            background = self._resolve_background(
-                stock_hint,
-                script.stock_keywords,
-                i,
-                len(slides),
-                still_pool=still_pool,
-            )
-            img = self.brand.create_cinematic_quote_card(
-                slide_text,
-                self.config.static_post.width,
-                self.config.static_post.height,
-                background,
-                slide_label=f"{i + 1}/{len(slides)}",
-            )
-            out = output_dir / f"static_post_{i + 1:02d}.png"
-            img.save(out)
-            paths.append(out)
+        use_panels = bool(
+            still_pool
+            and all(p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp") for p in still_pool)
+            and getattr(self.config, "content_mode", "") == "indian_dark_serial"
+            and script.panels
+        )
+        if use_panels:
+            for i, panel_path in enumerate(still_pool[: self.config.static_post.max_slides]):
+                img = Image.open(panel_path).convert("RGB")
+                img = self._fit_carousel(img)
+                out = output_dir / f"static_post_{i + 1:02d}.png"
+                img.save(out)
+                paths.append(out)
+        else:
+            for i, slide_text in enumerate(slides):
+                stock_hint = (stock_paths[i % len(stock_paths)] if stock_paths else None)
+                background = self._resolve_background(
+                    stock_hint,
+                    script.stock_keywords,
+                    i,
+                    len(slides),
+                    still_pool=still_pool,
+                )
+                img = self.brand.create_cinematic_quote_card(
+                    slide_text,
+                    self.config.static_post.width,
+                    self.config.static_post.height,
+                    background,
+                    slide_label=f"{i + 1}/{len(slides)}",
+                )
+                out = output_dir / f"static_post_{i + 1:02d}.png"
+                img.save(out)
+                paths.append(out)
 
         # Backward-compatible single file = first slide
         if paths:
@@ -152,3 +166,20 @@ class StaticPostGenerator:
             self.config.static_post.width,
             self.config.static_post.height,
         )
+
+    def _fit_carousel(self, img: Image.Image) -> Image.Image:
+        target_w = self.config.static_post.width
+        target_h = self.config.static_post.height
+        src = img.convert("RGB")
+        src_ratio = src.width / src.height
+        target_ratio = target_w / target_h
+        if src_ratio > target_ratio:
+            new_h = target_h
+            new_w = int(new_h * src_ratio)
+        else:
+            new_w = target_w
+            new_h = int(new_w / src_ratio)
+        resized = src.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        left = max(0, (new_w - target_w) // 2)
+        top = max(0, (new_h - target_h) // 2)
+        return resized.crop((left, top, left + target_w, top + target_h))

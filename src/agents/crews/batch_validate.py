@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from src.script_gen.limits import trim_to_limit
+from src.script_gen.policy import check_script_policy
 
 RECAP_PHRASES = (
     "पिछले एपिसोड",
@@ -127,6 +128,24 @@ def _has_bad_brand_hashtag(data: dict[str, Any], brand_hashtag: str) -> bool:
     return False
 
 
+def _panels_ok(data: dict[str, Any], *, require: bool) -> str | None:
+    from src.book_queue.models import ScriptOutput
+
+    panels = ScriptOutput._coerce_panels(data.get("panels", []))
+    if require and len(panels) < 8:
+        return f"panels too few ({len(panels)} < 8)"
+    for i, panel in enumerate(panels):
+        if len(panel.dialogue) < 4:
+            return f"panel {i + 1} dialogue too short"
+        if len(panel.dialogue) > 80:
+            return f"panel {i + 1} dialogue too long for bubble"
+        if not panel.scene.strip():
+            return f"panel {i + 1} missing scene"
+        if not panel.speaker.strip():
+            return f"panel {i + 1} missing speaker"
+    return None
+
+
 def validate_script_dict(
     data: dict[str, Any],
     min_chars: int,
@@ -134,6 +153,7 @@ def validate_script_dict(
     *,
     style_tag: str = "",
     brand_hashtag: str = "#RahasyaExe",
+    require_panels: bool = False,
 ) -> str | None:
     body = script_body(data)
     if not body:
@@ -173,6 +193,14 @@ def validate_script_dict(
     if _has_bad_brand_hashtag(data, brand_hashtag):
         return f"bad brand hashtag (use {brand_hashtag})"
 
+    policy_err = check_script_policy(data)
+    if policy_err:
+        return policy_err
+
+    panel_err = _panels_ok(data, require=require_panels)
+    if panel_err:
+        return panel_err
+
     return None
 
 
@@ -204,6 +232,17 @@ def normalize_script_dict(
         if tag and not any(tag.lower() in k.lower() or k.lower() in tag.lower() for k in keywords):
             keywords.append(tag)
     out["stock_keywords"] = keywords
+    out["panels"] = [
+        {
+            "dialogue": p.dialogue,
+            "scene": p.scene,
+            "speaker": p.speaker,
+            "characters": p.characters,
+            "bubble": p.bubble,
+            "action": p.action,
+        }
+        for p in ScriptOutput._coerce_panels(out.get("panels", []))
+    ]
     return out
 
 

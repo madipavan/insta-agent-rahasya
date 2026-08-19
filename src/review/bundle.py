@@ -46,13 +46,15 @@ class ReviewBundleWriter:
         bundle_dir = self.config.path("output_dir") / "review" / bundle_id
         bundle_dir.mkdir(parents=True, exist_ok=True)
 
+        from dataclasses import asdict
+
         metadata: dict[str, Any] = {
             "bundle_id": bundle_id,
             "novel_title": context.novel.title,
             "novel_author": context.novel.author,
             "episode_num": context.episode.episode_num,
             "total_episodes": context.total_episodes,
-            "script": script.__dict__,
+            "script": asdict(script),
             "caption": caption,
             "static_post_count": len(static_paths),
             "static_posts": [p.name for p in static_paths],

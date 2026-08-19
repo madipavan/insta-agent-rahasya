@@ -25,6 +25,7 @@ class Pipeline:
         self._script_gen = None
         self._voiceover = None
         self._stock = None
+        self._panels = None
         self._reel = None
         self._static_post = None
         self._novel_assets = None
@@ -51,6 +52,14 @@ class Pipeline:
 
             self._voiceover = get_voiceover_provider(self.config, self.logger)
         return self._voiceover
+
+    @property
+    def panels(self):
+        if self._panels is None:
+            from src.visuals.panel_resolver import PanelResolver
+
+            self._panels = PanelResolver(self.config, self.logger)
+        return self._panels
 
     @property
     def stock(self):
@@ -116,21 +125,35 @@ class Pipeline:
             )
 
             assets = self.novel_assets.ensure(context.novel, script.stock_keywords)
+
+            from src.visuals.panel_resolver import is_panel_mode
+
+            panel_paths: list[Path] = []
+            if is_panel_mode(self.config) and script.panels:
+                panel_paths = self.panels.resolve_panels(script, context, work_dir / "panels")
+                stock_paths = panel_paths
+            else:
+                stock_paths = self.stock.resolve_visuals(script.stock_keywords, work_dir)
+
             hook_for_thumb = ""
             if script.on_screen_text:
                 hook_for_thumb = script.on_screen_text[0]
             elif script.hook:
                 hook_for_thumb = script.hook
-            thumbnail_path = self.novel_assets.episode_thumbnail(
-                context.novel,
-                context.episode.episode_num,
-                context.total_episodes,
-                work_dir / "thumbnail.png",
-                assets=assets,
-                hook_text=hook_for_thumb,
-            )
+            if panel_paths:
+                import shutil
 
-            stock_paths = self.stock.resolve_visuals(script.stock_keywords, work_dir)
+                thumbnail_path = work_dir / "thumbnail.png"
+                shutil.copy2(panel_paths[0], thumbnail_path)
+            else:
+                thumbnail_path = self.novel_assets.episode_thumbnail(
+                    context.novel,
+                    context.episode.episode_num,
+                    context.total_episodes,
+                    work_dir / "thumbnail.png",
+                    assets=assets,
+                    hook_text=hook_for_thumb,
+                )
             reel_path = self.reel.assemble(
                 context,
                 script,
@@ -139,10 +162,15 @@ class Pipeline:
                 work_dir / "reel.mp4",
                 bgm_path=assets.bgm_path,
                 sfx_dir=assets.sfx_dir,
+                panel_mode=bool(panel_paths),
             )
-            static_paths = self.static_post.generate_all(
-                context, script, work_dir, stock_paths
-            )
+            if getattr(self.config.static_post, "enabled", True) is not False:
+                static_paths = self.static_post.generate_all(
+                    context, script, work_dir, panel_paths or stock_paths
+                )
+            else:
+                static_paths = []
+                self.logger.info("static_post | skipped (disabled in config)")
 
             script_txt_path = write_script_txt(
                 context, script, work_dir / "script.txt", caption=caption

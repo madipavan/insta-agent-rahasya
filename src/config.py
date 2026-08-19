@@ -41,6 +41,7 @@ class DiscoveryConfig:
 
 @dataclass
 class StaticPostConfig:
+    enabled: bool = True
     width: int = 1080
     height: int = 1350
     layout_rotation: str = "quote"
@@ -84,7 +85,7 @@ class VideoConfig:
 class ReplicateArtConfig:
     """Fictional stills via Replicate. Stock video/photos are fallback."""
 
-    enabled: bool = True
+    enabled: bool = False
     model: str = "black-forest-labs/flux-dev"
     aspect_ratio: str = "9:16"
     style_tag: str = (
@@ -102,6 +103,22 @@ class ReplicateArtConfig:
 
 
 @dataclass
+class OpenAIArtConfig:
+    """Indian comic panels via OpenAI gpt-image (bubbles baked into prompt)."""
+
+    enabled: bool = True
+    model: str = "gpt-image-1"
+    size: str = "1024x1536"
+    quality: str = "medium"
+    panel_count: int = 10
+    max_retries: int = 2
+    style_tag: str = (
+        "Indian 2D digital illustration, visual novel webtoon style, clean outlines, "
+        "smooth cel shading, warm cinematic lighting, modern Indian characters"
+    )
+
+
+@dataclass
 class PathsConfig:
     data_dir: str = "data"
     db_path: str = "data/rahasya.db"
@@ -112,13 +129,14 @@ class PathsConfig:
     voiceover_cache_dir: str = "output/voiceover_cache"
     sample_scripts: str = "data/sample_scripts"
     novels_seed: str = "data/novels_seed.json"
+    stories_seed: str = "data/stories_seed.json"
     novels_pdf_dir: str = "data/novels"
 
 
 @dataclass
 class AppConfig:
     brand: BrandConfig = field(default_factory=BrandConfig)
-    llm_provider: str = "gemini"
+    llm_provider: str = "openai"
     llm_fallback_providers: list[str] = field(
         default_factory=lambda: ["groq", "mistral"]
     )
@@ -165,12 +183,14 @@ class AppConfig:
     script_min_seconds: int = 75
     script_max_seconds: int = 80
     cta: str = "Follow for the next part 👀"
-    hashtags: str = "#thrillerbooks #suspensenovel #bookstagram #RahasyaExe #booktok"
+    hashtags: str = "#darkstory #hindikahani #crimethriller #thriller #RahasyaExe #storytime"
     brand_hashtag: str = "#RahasyaExe"
     stock_style_tag: str = (
-        "stylized cinematic illustration, teal-blue noir grade, "
-        "dramatic shadows, fictional thriller book-art"
+        "Indian 2D digital illustration, visual novel webtoon style, clean outlines, "
+        "smooth cel shading, warm cinematic lighting, modern Indian characters"
     )
+    content_mode: str = "indian_dark_serial"
+    image_provider: str = "openai"
     review_required: bool = True
     auto_publish: bool = False
     min_publish_delay_hours: int = 20
@@ -180,6 +200,7 @@ class AppConfig:
     static_post: StaticPostConfig = field(default_factory=StaticPostConfig)
     video: VideoConfig = field(default_factory=VideoConfig)
     replicate_art: ReplicateArtConfig = field(default_factory=ReplicateArtConfig)
+    openai_art: OpenAIArtConfig = field(default_factory=OpenAIArtConfig)
     paths: PathsConfig = field(default_factory=PathsConfig)
 
     anthropic_api_key: str = ""
@@ -231,7 +252,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
 
     config = AppConfig(
         brand=_merge_dataclass(BrandConfig, raw.get("brand", {})),
-        llm_provider=raw.get("llm_provider", "gemini"),
+        llm_provider=raw.get("llm_provider", "openai"),
         llm_fallback_providers=raw.get(
             "llm_fallback_providers", ["groq", "mistral"]
         ),
@@ -280,14 +301,16 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         cta=raw.get("cta", "Follow for the next part 👀"),
         hashtags=raw.get(
             "hashtags",
-            "#thrillerbooks #suspensenovel #bookstagram #RahasyaExe #booktok",
+            "#darkstory #hindikahani #crimethriller #thriller #RahasyaExe #storytime",
         ),
         brand_hashtag=raw.get("brand_hashtag", "#RahasyaExe"),
         stock_style_tag=raw.get(
             "stock_style_tag",
-            "stylized cinematic illustration, teal-blue noir grade, "
-            "dramatic shadows, fictional thriller book-art",
+            "Indian 2D digital illustration, visual novel webtoon style, clean outlines, "
+            "smooth cel shading, warm cinematic lighting, modern Indian characters",
         ),
+        content_mode=raw.get("content_mode", "indian_dark_serial"),
+        image_provider=raw.get("image_provider", "openai"),
         review_required=raw.get("review_required", True),
         auto_publish=raw.get("auto_publish", False),
         min_publish_delay_hours=int(raw.get("min_publish_delay_hours", 20)),
@@ -297,6 +320,7 @@ def load_config(config_path: Path | None = None) -> AppConfig:
         static_post=_merge_dataclass(StaticPostConfig, raw.get("static_post", {})),
         video=_merge_dataclass(VideoConfig, raw.get("video", {})),
         replicate_art=_merge_dataclass(ReplicateArtConfig, raw.get("replicate_art", {})),
+        openai_art=_merge_dataclass(OpenAIArtConfig, raw.get("openai_art", {})),
         paths=_merge_dataclass(PathsConfig, raw.get("paths", {})),
     )
 

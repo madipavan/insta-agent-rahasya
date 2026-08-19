@@ -224,12 +224,16 @@ class MetaScheduler:
         public_url = self._host_reel_publicly(video_path)
         if public_url:
             try:
-                return self._create_reel_container_via_video_url(
+                container_id = self._create_reel_container_via_video_url(
                     public_url,
                     caption,
                     cover_url=cover_url,
                 )
-            except (requests.RequestException, RuntimeError) as exc:
+                # Container create succeeding is not enough: Meta fetches
+                # video_url asynchronously and reports 2207076 later.
+                self._wait_reel_container_processed(container_id)
+                return container_id
+            except (requests.RequestException, RuntimeError, TimeoutError) as exc:
                 self.logger.warn(
                     "meta",
                     f"video_url reel upload failed ({exc}) — trying rupload binary",
@@ -327,8 +331,9 @@ class MetaScheduler:
         """
         Upload reel bytes to a third-party host so Meta can fetch via video_url.
 
-        Meta-hosted Page video URLs are rejected; external public hosts work.
-        rupload.facebook.com binary upload is unreliable on CI and large files.
+        Do not use raw.githubusercontent.com: Meta's crawler is blocked by
+        GitHub robots.txt and the container then fails with 2207076.
+        Catbox is fetchable; rupload is the last resort if hosting fails.
         """
         import os
 
@@ -344,10 +349,6 @@ class MetaScheduler:
             f"meta | hosting reel for video_url upload ({size} bytes, {video_path.name})"
         )
 
-        url = self._host_reel_via_github_contents(video_path)
-        if url:
-            return url
-
         userhash = (os.getenv("CATBOX_USERHASH") or "").strip()
         if userhash:
             url = self._host_reel_via_catbox(video_path, userhash=userhash)
@@ -357,7 +358,8 @@ class MetaScheduler:
         return self._host_reel_via_catbox(video_path, userhash=None)
 
     def _host_reel_via_github_contents(self, video_path: Path) -> str | None:
-        """Upload to a public raw.githubusercontent.com URL (GitHub Actions CI path)."""
+        """Upload to GitHub Contents API. Not used as Instagram video_url (Meta
+        crawler is blocked by GitHub robots.txt → error 2207076)."""
         import base64
         import os
         import uuid
@@ -859,10 +861,10 @@ class MetaScheduler:
         """Backward-compatible alias."""
         self._upload_video_to_container(container_id, file_path)
 
-    def _wait_and_publish(
-        self, container_id: str, *, publish_at: datetime | None = None
-    ) -> str | None:
-        for attempt in range(self.POLL_MAX_ATTEMPTS):
+    def _wait_reel_container_processed(self, container_id: str) -> dict:
+        """Poll until Meta finishes ingesting the reel. Raise on ERROR / timeout."""
+        last: dict = {}
+        for _ in range(self.POLL_MAX_ATTEMPTS):
             resp = requests.get(
                 f"{self.GRAPH_URL}/{container_id}",
                 params={
@@ -872,16 +874,21 @@ class MetaScheduler:
                 timeout=30,
             )
             resp.raise_for_status()
-            status = resp.json().get("status_code", "")
+            last = resp.json()
+            status = last.get("status_code", "")
             if status == "FINISHED":
-                break
+                return last
             if status == "ERROR":
                 raise RuntimeError(
-                    f"Container {container_id} failed: {resp.json().get('status')}"
+                    f"Container {container_id} failed: {last.get('status')}"
                 )
             time.sleep(self.POLL_INTERVAL_SEC)
-        else:
-            raise TimeoutError(f"Container {container_id} did not finish in time")
+        raise TimeoutError(f"Container {container_id} did not finish in time")
+
+    def _wait_and_publish(
+        self, container_id: str, *, publish_at: datetime | None = None
+    ) -> str | None:
+        self._wait_reel_container_processed(container_id)
 
         params: dict[str, str] = {
             "access_token": self.access_token,

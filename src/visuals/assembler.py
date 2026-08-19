@@ -36,6 +36,8 @@ class ReelAssembler:
         output_path: Path,
         bgm_path: Path | None = None,
         sfx_dir: Path | None = None,
+        *,
+        panel_mode: bool = False,
     ) -> Path:
         if isinstance(stock_paths, Path):
             stock_paths = [stock_paths]
@@ -88,27 +90,30 @@ class ReelAssembler:
             self._create_montage_video(stock_paths, main_video, main_dur, fps, width, height, tmp_dir)
             self._create_image_video(outro_path, outro_video, outro_dur, fps, width, height)
 
-            segments = self.captions.generate(audio_path)
-            if script.on_screen_text:
-                hook_segments = [
-                    CaptionSegment(
-                        script.on_screen_text[0],
-                        0.0,
-                        min(3.0, main_dur),
-                        style="Hook",
-                    )
-                ]
-                # Skip overlapping Whisper text during hook window
-                rest = [s for s in segments if s.start >= min(3.0, main_dur) - 0.05]
-                segments = hook_segments + rest
+            if panel_mode:
+                import shutil
+                shutil.copy(main_video, captioned)
+            else:
+                segments = self.captions.generate(audio_path)
+                if script.on_screen_text:
+                    hook_segments = [
+                        CaptionSegment(
+                            script.on_screen_text[0],
+                            0.0,
+                            min(3.0, main_dur),
+                            style="Hook",
+                        )
+                    ]
+                    rest = [s for s in segments if s.start >= min(3.0, main_dur) - 0.05]
+                    segments = hook_segments + rest
 
-            segments = make_bilingual_segments(
-                segments,
-                script.english_voiceover,
-                english_on_screen=script.english_on_screen,
-            )
+                segments = make_bilingual_segments(
+                    segments,
+                    script.english_voiceover,
+                    english_on_screen=script.english_on_screen,
+                )
 
-            self._overlay_captions(main_video, captioned, segments, width, height, tmp_dir)
+                self._overlay_captions(main_video, captioned, segments, width, height, tmp_dir)
 
             concat_list.write_text(
                 f"file '{intro_video.as_posix()}'\n"

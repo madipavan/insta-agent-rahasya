@@ -39,6 +39,7 @@ def _validate_script(
     *,
     style_tag: str = "",
     brand_hashtag: str = "#RahasyaExe",
+    require_panels: bool = False,
 ) -> str | None:
     return validate_script_dict(
         data,
@@ -46,6 +47,7 @@ def _validate_script(
         max_chars,
         style_tag=style_tag,
         brand_hashtag=brand_hashtag,
+        require_panels=require_panels,
     )
 
 class ScriptGraphRunner:
@@ -82,6 +84,7 @@ class ScriptGraphRunner:
             novel_logline=context.novel.novel_logline,
             story_summary=context.novel.story_summary,
             retention_strategy=context.novel.retention_strategy,
+            content_mode=getattr(self.config, "content_mode", ""),
         )
 
         state: ScriptState = {
@@ -134,12 +137,14 @@ class ScriptGraphRunner:
         return {**state, "script_data": data, "attempt": attempt, "error": ""}
 
     def _validate_node(self, state: ScriptState) -> ScriptState:
+        require_panels = getattr(self.config, "content_mode", "") == "indian_dark_serial"
         err = _validate_script(
             state["script_data"],
             state["min_chars"],
             state["max_chars"],
             style_tag=getattr(self.config, "stock_style_tag", ""),
             brand_hashtag=getattr(self.config, "brand_hashtag", "#RahasyaExe"),
+            require_panels=require_panels,
         )
         return {**state, "error": err or ""}
 

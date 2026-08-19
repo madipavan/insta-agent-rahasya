@@ -34,7 +34,17 @@ class BookQueue:
         return self._discovery
 
     def ensure_queue(self) -> None:
-        seed_path = self.config.path("novels_seed")
+        if getattr(self.config, "content_mode", "") == "indian_dark_serial":
+            archived = self.db.archive_non_serial_novels()
+            if archived:
+                self.logger.info(f"queue | archived {archived} legacy novel(s)")
+
+        seed_key = (
+            "stories_seed"
+            if getattr(self.config, "content_mode", "") == "indian_dark_serial"
+            else "novels_seed"
+        )
+        seed_path = self.config.path(seed_key)
         if self.db.count_queued_novels() < self.config.discovery.min_queue_size:
             imported = self.db.import_seed_file(seed_path)
             if imported:

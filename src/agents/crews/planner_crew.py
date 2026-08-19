@@ -57,13 +57,22 @@ class PlannerCrew:
         )
 
         arc_prompt = (
-            f"Novel: {novel.title} by {novel.author} ({novel.country})\n"
+            f"Series: {novel.title} by {novel.author} ({novel.country})\n"
             f"Total episodes: {episode_count}\n"
-            f"Chapter mapping:\n{ranges_text}\n\n"
-            "Return JSON with keys: novel_logline, story_summary, retention_strategy, episodes (array).\n"
-            "novel_logline: 1 punchy Hindi-friendly hook sentence for the whole novel.\n"
-            "story_summary: 6-8 sentences — full novel arc (setup, stakes, twists, ending tease). "
-            "Original paraphrase. Name the protagonist and central mystery.\n"
+            f"Episode mapping:\n{ranges_text}\n"
+        )
+        if novel.novel_logline or novel.story_summary:
+            arc_prompt += (
+                f"\nExisting story bible (expand, do not discard):\n"
+                f"Logline: {novel.novel_logline}\n"
+                f"Summary: {novel.story_summary}\n"
+                f"Retention: {novel.retention_strategy}\n"
+            )
+        arc_prompt += (
+            "\nReturn JSON with keys: novel_logline, story_summary, retention_strategy, episodes (array).\n"
+            "novel_logline: 1 punchy Hindi-friendly hook sentence for the whole series.\n"
+            "story_summary: 6-8 sentences — full series arc (setup, stakes, twists, ending tease). "
+            "Original Indian dark serial. Name the protagonist and central secret.\n"
             "Each episode object: episode_num, plot_beat_summary, cumulative_synopsis,\n"
             "planned_hook, planned_cliffhanger, retention_angle.\n"
             "plot_beat_summary must include character names and specific events — not generic 'tension rises'.\n"

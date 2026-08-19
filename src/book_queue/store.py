@@ -249,6 +249,23 @@ class Database:
         with self._connect() as conn:
             conn.execute("UPDATE novels SET status = ? WHERE id = ?", (status, novel_id))
 
+    def archive_non_serial_novels(self, *, original_author: str = "Rahasya Original") -> int:
+        """Archive legacy Gutenberg novels when pivoting to original Indian serials."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id FROM novels
+                WHERE author != ? AND status IN ('active', 'queued')
+                """,
+                (original_author,),
+            ).fetchall()
+            for row in rows:
+                conn.execute(
+                    "UPDATE novels SET status = 'archived' WHERE id = ?",
+                    (row["id"],),
+                )
+            return len(rows)
+
     def set_estimated_episodes(self, novel_id: int, estimated_episodes: int) -> None:
         with self._connect() as conn:
             conn.execute(
@@ -795,7 +812,7 @@ class Database:
             author = item.get("author", "")
             if not title or not author or self.novel_exists(title, author):
                 continue
-            self.add_novel(
+            novel_id = self.add_novel(
                 title=title,
                 author=author,
                 country=item.get("country", ""),
@@ -805,5 +822,13 @@ class Database:
                 adaptation_checked=item.get("adaptation_checked", False),
                 status="queued",
             )
+            logline = item.get("novel_logline", "")
+            summary = item.get("story_summary", "")
+            retention = item.get("retention_strategy", "")
+            bible = item.get("character_bible", "")
+            if bible and bible not in summary:
+                summary = f"{summary} Character bible: {bible}".strip()
+            if logline or summary or retention:
+                self.set_novel_story_bible(novel_id, logline, summary, retention)
             count += 1
         return count

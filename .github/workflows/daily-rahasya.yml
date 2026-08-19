@@ -12,7 +12,7 @@ on:
         type: boolean
         default: false
       next_novel:
-        description: "Permanently abandon current novel and start the next one (ep 1 of new book)"
+        description: "Abandon current series and start the next one (ep 1 of new serial)"
         type: boolean
         default: false
 
@@ -59,18 +59,13 @@ jobs:
 
       - name: Check required secrets
         run: |
-          if [ -z "$GROQ_API_KEY" ] && [ -z "$GEMINI_API_KEY" ] && [ -z "$MISTRAL_API_KEY" ]; then
-            echo "::error::Set at least one LLM key: GEMINI_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY"
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::OPENAI_API_KEY required for scripts (GPT-4o) and comic panels (gpt-image-1)"
             exit 1
           fi
           if [ -z "$META_ACCESS_TOKEN" ] || [ -z "$META_IG_USER_ID" ]; then
             echo "::error::META_ACCESS_TOKEN and META_IG_USER_ID are required for publishing"
             exit 1
-          fi
-          if [ -z "$PEXELS_API_KEY" ] && [ -z "$PIXABAY_API_KEY" ] && [ -z "$REPLICATE_API_TOKEN" ]; then
-            echo "::warning::No REPLICATE_API_TOKEN / PEXELS / PIXABAY — visuals may use placeholders"
-          elif [ -z "$REPLICATE_API_TOKEN" ]; then
-            echo "::warning::REPLICATE_API_TOKEN missing — fictional stills fall back to stock photos"
           fi
           if [ -z "$ELEVENLABS_API_KEY" ] && [ -z "$SARVAM_API_KEY" ] && [ -z "$FISH_AUDIO_API_KEY" ]; then
             echo "::warning::No TTS API keys set — voiceover will fall back to edge-tts"
